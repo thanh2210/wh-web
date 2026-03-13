@@ -35,12 +35,8 @@ data_nhansu = ws_nhansu.get_all_records()
 
 # --- HÀM KIỂM TRA QUYỀN HẠN ---
 def kiem_tra_quyen(user, quyen_can_check):
-    # Admin mặc định có MỌI quyền
     if user['vai_tro'] == 'admin':
         return True
-    
-    # Với nhân viên, kiểm tra xem quyền đó có nằm trong chuỗi quyền của họ không
-    # Ví dụ: user['quyen'] = "Them, Xuat"
     danh_sach_quyen = str(user['quyen']).split(', ')
     return quyen_can_check in danh_sach_quyen
 
@@ -70,7 +66,6 @@ else:
         st.success(f"👤 Chào: **{user['ten_that']}**")
         st.caption(f"Vai trò: {user['vai_tro'].upper()}")
         
-        # Hiển thị huy hiệu quyền cho user dễ thấy
         if user['vai_tro'] == 'admin':
             st.info("Quyền: TOÀN QUYỀN ADMIN")
         else:
@@ -82,11 +77,42 @@ else:
             trang_hien_tai = "📦 Quản lý Sản Phẩm"
             
         st.divider()
+        
+        # --- TÍNH NĂNG MỚI: ĐỔI MẬT KHẨU ---
+        with st.expander("🔑 Đổi Mật Khẩu Cá Nhân", expanded=False):
+            with st.form("form_doi_mk"):
+                mk_cu = st.text_input("Mật khẩu hiện tại:", type="password")
+                mk_moi = st.text_input("Mật khẩu mới:", type="password")
+                mk_xac_nhan = st.text_input("Xác nhận mật khẩu mới:", type="password")
+                
+                if st.form_submit_button("Cập Nhật Mật Khẩu"):
+                    if mk_cu != str(user['mat_khau']):
+                        st.error("❌ Mật khẩu hiện tại không đúng!")
+                    elif mk_moi != mk_xac_nhan:
+                        st.error("❌ Mật khẩu xác nhận không khớp!")
+                    elif len(mk_moi) < 4:
+                        st.error("⚠️ Mật khẩu mới phải có ít nhất 4 ký tự!")
+                    else:
+                        try:
+                            # Tìm tài khoản trên Sheet NhanSu
+                            cell_tk = ws_nhansu.find(str(user['tai_khoan']))
+                            if cell_tk:
+                                # Cập nhật mật khẩu vào Cột B (Cột thứ 2) của dòng tương ứng
+                                ws_nhansu.update(values=[[mk_moi]], range_name=f"B{cell_tk.row}")
+                                # Cập nhật ngay trong phiên đăng nhập hiện tại
+                                st.session_state.nguoi_dung['mat_khau'] = mk_moi 
+                                st.success("✅ Đổi mật khẩu thành công!")
+                            else:
+                                st.error("Lỗi: Không tìm thấy tài khoản trên hệ thống.")
+                        except Exception as e:
+                            st.error(f"Lỗi hệ thống: {e}")
+                            
+        st.divider()
         if st.button("🚪 Đăng Xuất"):
             st.session_state.nguoi_dung = None
             st.rerun()
 
-    # ================= QUẢN LÝ NHÂN SỰ (ADMIN) =================
+    # ================= QUẢN LÝ NHÂN SỰ =================
     if trang_hien_tai == "👥 Quản lý Nhân Sự":
         st.title("👥 Quản Lý Tài Khoản Nhân Viên")
         with st.form("tao_tai_khoan", clear_on_submit=True):
@@ -97,8 +123,6 @@ else:
                 mk_moi = st.text_input("Mật khẩu:")
             with col2:
                 ten_that_moi = st.text_input("Tên thật nhân viên:")
-                
-                # CHUYỂN SANG DẠNG TICK CHỌN NHIỀU QUYỀN
                 st.write("☑️ Tích chọn các quyền được phép:")
                 q_them = st.checkbox("Thêm Sản Phẩm (Add)")
                 q_sua = st.checkbox("Sửa Sản Phẩm (Edit)")
@@ -111,7 +135,6 @@ else:
                     if tk_moi in danh_sach_tk:
                         st.error("❌ Tên đăng nhập này đã tồn tại!")
                     else:
-                        # Gom các quyền đã tick thành 1 chuỗi văn bản
                         quyen_duoc_cap = []
                         if q_them: quyen_duoc_cap.append("Them")
                         if q_sua: quyen_duoc_cap.append("Sua")
@@ -126,9 +149,15 @@ else:
                     st.error("⚠️ Vui lòng điền đủ thông tin!")
         st.divider()
         st.subheader("📋 Danh sách nhân sự hiện tại")
-        st.dataframe(pd.DataFrame(data_nhansu), use_container_width=True)
+        
+        # CHỈNH SỬA NHỎ: Ẩn cột mật khẩu của nhân viên để Admin cũng không xem trộm được mật khẩu của họ
+        df_nhansu = pd.DataFrame(data_nhansu)
+        if not df_nhansu.empty:
+            df_nhansu_hien_thi = df_nhansu.copy()
+            df_nhansu_hien_thi['mat_khau'] = "********" # Mã hóa hiển thị
+            st.dataframe(df_nhansu_hien_thi, use_container_width=True)
 
-    # ================= QUẢN LÝ SẢN PHẨM (ADMIN + USER) =================
+    # ================= QUẢN LÝ SẢN PHẨM =================
     elif trang_hien_tai == "📦 Quản lý Sản Phẩm":
         st.title("📦 Bảng Trắng Quản Lý Sản Phẩm")
         
@@ -155,7 +184,7 @@ else:
         
         danh_sach_ma_sp = df_sp['ma_sp'].astype(str).tolist() if not df_sp.empty else []
 
-        # --- KHU VỰC 1: THÊM SẢN PHẨM (Chỉ hiện nếu có quyền 'Them') ---
+        # --- KHU VỰC 1: THÊM SẢN PHẨM ---
         if kiem_tra_quyen(user, 'Them'):
             with st.expander("➕ Bấm vào đây để Thêm Sản Phẩm Mới", expanded=False):
                 with st.form("form_nhap_lieu", clear_on_submit=True):
@@ -220,7 +249,6 @@ else:
                     st.info(f"📌 Đang chọn **{so_luong_chon}** sản phẩm.")
                     df_xuat_excel = danh_sach_chon.drop(columns=["Chọn"])
                     
-                    # KIỂM TRA QUYỀN TRƯỚC KHI HIỂN THỊ NÚT
                     co_quyen_xuat = kiem_tra_quyen(user, 'Xuat')
                     co_quyen_sua = kiem_tra_quyen(user, 'Sua')
                     co_quyen_xoa = kiem_tra_quyen(user, 'Xoa')
@@ -228,7 +256,6 @@ else:
                     if not (co_quyen_xuat or co_quyen_sua or co_quyen_xoa):
                         st.warning("🔒 Bạn chỉ có quyền Xem, không có quyền thao tác trên các sản phẩm đã chọn.")
                     
-                    # 1. NÚT XUẤT EXCEL
                     if co_quyen_xuat:
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -236,7 +263,6 @@ else:
                         ten_file = f"San_Pham_Da_Chon_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
                         st.download_button("📥 Xuất File Excel (Chỉ file được chọn)", data=output.getvalue(), file_name=ten_file, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     
-                    # 2. KHU VỰC SỬA SẢN PHẨM
                     if co_quyen_sua:
                         if so_luong_chon == 1:
                             st.subheader("✏️ Chỉnh Sửa Sản Phẩm Này")
@@ -266,7 +292,6 @@ else:
                         else:
                             st.warning("⚠️ Để chỉnh sửa, vui lòng chỉ tick chọn 1 sản phẩm duy nhất.")
                     
-                    # 3. NÚT XÓA SẢN PHẨM
                     if co_quyen_xoa:
                         if st.button(f"🗑️ XÓA {so_luong_chon} SẢN PHẨM ĐÃ CHỌN", type="primary"):
                             ma_sp_can_xoa = danh_sach_chon['ma_sp'].astype(str).tolist()
