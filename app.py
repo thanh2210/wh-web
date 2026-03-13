@@ -24,11 +24,9 @@ except Exception as e:
     st.error("Chưa thể kết nối Google Sheets. Vui lòng kiểm tra lại cài đặt Secrets.")
     st.stop()
 
-# Khởi tạo trạng thái đăng nhập
 if 'nguoi_dung' not in st.session_state:
     st.session_state.nguoi_dung = None
 
-# Lấy toàn bộ dữ liệu từ Sheet (thành dạng danh sách chứa Dictionary)
 data_nhansu = ws_nhansu.get_all_records()
 
 # --- 2. GIAO DIỆN ĐĂNG NHẬP ---
@@ -84,7 +82,7 @@ else:
                         st.error("Tên đăng nhập này đã tồn tại!")
                     else:
                         ws_nhansu.append_row([tk_moi, mk_moi, ten_that_moi, 'nhan_vien', quyen_moi])
-                        st.success("Đã tạo tài khoản! Vui lòng làm mới trang (F5) để cập nhật.")
+                        st.success("Đã tạo tài khoản! Vui lòng ấn F5 để làm mới dữ liệu.")
                 else:
                     st.error("Vui lòng điền đủ thông tin!")
                     
@@ -97,6 +95,11 @@ else:
     elif trang_hien_tai == "📦 Quản lý Sản Phẩm":
         st.title("📦 Ứng Dụng Quản Lý Sản Phẩm")
         
+        # --- Lấy dữ liệu sản phẩm hiện tại ---
+        data_sanpham = ws_sanpham.get_all_records()
+        df_sp = pd.DataFrame(data_sanpham)
+        
+        # --- KHU VỰC 1: THÊM SẢN PHẨM MỚI ---
         if user['quyen'] == 'chinh_sua' or user['vai_tro'] == 'admin':
             with st.form("form_nhap_lieu", clear_on_submit=True):
                 st.subheader("📝 Thêm Sản Phẩm Mới")
@@ -117,14 +120,12 @@ else:
                     else:
                         st.error("Thiếu mã hoặc tên sản phẩm!")
         else:
-            st.warning("⚠️ Tài khoản của bạn chỉ có quyền XEM dữ liệu.")
+            st.warning("⚠️ Tài khoản của bạn chỉ có quyền XEM dữ liệu, không được Thêm/Sửa/Xóa.")
 
         st.divider()
+
+        # --- KHU VỰC 2: HIỂN THỊ DỮ LIỆU ---
         st.subheader("📊 Dữ Liệu Sản Phẩm Đồng Bộ Từ Google Sheets")
-        
-        data_sanpham = ws_sanpham.get_all_records()
-        df_sp = pd.DataFrame(data_sanpham)
-        
         if not df_sp.empty:
             st.dataframe(df_sp, use_container_width=True)
             
@@ -137,3 +138,50 @@ else:
             st.download_button("📥 Tải File Excel (Bản Sao)", data=excel_data, file_name=ten_file, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         else:
             st.info("Chưa có dữ liệu.")
+            
+        st.divider()
+
+        # --- KHU VỰC 3: SỬA HOẶC XÓA SẢN PHẨM (TÍNH NĂNG MỚI) ---
+        if (user['quyen'] == 'chinh_sua' or user['vai_tro'] == 'admin') and not df_sp.empty:
+            st.subheader("🛠️ Chỉnh Sửa / Xóa Sản Phẩm Đã Nhập")
+            
+            # Tạo danh sách các mã sản phẩm để người dùng chọn
+            danh_sach_ma = df_sp['ma_sp'].astype(str).tolist()
+            ma_can_sua = st.selectbox("📌 Chọn Mã Sản Phẩm cần thao tác:", danh_sach_ma)
+            
+            # Tìm dòng tương ứng trên Google Sheets
+            # Lưu ý: Index trong Python bắt đầu từ 0. Google Sheets Dòng 1 là Tiêu đề -> Dữ liệu bắt đầu từ Dòng 2
+            vitri = danh_sach_ma.index(ma_can_sua)
+            dong_trong_sheet = vitri + 2 
+            sp_hien_tai = data_sanpham[vitri]
+            
+            with st.form("form_sua_xoa"):
+                st.write(f"Đang thao tác với: **{sp_hien_tai['ten_sp']}**")
+                
+                # Điền sẵn thông tin cũ vào các ô nhập liệu
+                col1, col2 = st.columns(2)
+                with col1:
+                    ten_moi = st.text_input("Tên sản phẩm", value=str(sp_hien_tai['ten_sp']))
+                    sl_moi = st.number_input("Số lượng", value=int(sp_hien_tai['so_luong']), step=1)
+                with col2:
+                    gia_moi = st.number_input("Giá bán (VNĐ)", value=int(sp_hien_tai['gia_ban']), step=1000)
+                    ghi_chu_moi = st.text_area("Ghi chú", value=str(sp_hien_tai['ghi_chu']))
+                
+                col_btn1, col_btn2 = st.columns(2)
+                btn_sua = col_btn1.form_submit_button("✏️ Cập Nhật Thông Tin")
+                btn_xoa = col_btn2.form_submit_button("🗑️ Xóa Sản Phẩm Này")
+                
+                if btn_sua:
+                    thoi_gian_sua = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    nguoi_sua = f"{user['ten_that']} (Sửa)"
+                    
+                    # Cập nhật đúng vào dòng đã chọn trên Google Sheets (Từ cột A đến cột G)
+                    danh_sach_cap_nhat = [[ma_can_sua, ten_moi, sl_moi, gia_moi, ghi_chu_moi, nguoi_sua, thoi_gian_sua]]
+                    ws_sanpham.update(range_name=f"A{dong_trong_sheet}:G{dong_trong_sheet}", values=danh_sach_cap_nhat)
+                    
+                    st.success(f"✅ Đã cập nhật thành công sản phẩm {ma_can_sua}! Vui lòng ấn F5 để tải lại bảng.")
+                    
+                if btn_xoa:
+                    # Xóa dòng trực tiếp trên Google Sheets
+                    ws_sanpham.delete_rows(dong_trong_sheet)
+                    st.success(f"🗑️ Đã xóa sản phẩm {ma_can_sua}! Vui lòng ấn F5 để tải lại bảng.")
