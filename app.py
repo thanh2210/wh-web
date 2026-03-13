@@ -5,8 +5,12 @@ from google.oauth2.service_account import Credentials
 import json
 from datetime import datetime
 from io import BytesIO
+import altair as alt # Thư viện vẽ biểu đồ có sẵn của Streamlit
 
-st.set_page_config(page_title="Hệ Thống Quản Lý", page_icon="📦", layout="wide")
+st.set_page_config(page_title="Hệ Thống Quản Lý ERP", page_icon="📦", layout="wide")
+
+# --- DANH MỤC SẢN PHẨM MẶC ĐỊNH ---
+DANH_MUC_SP = ["Điện tử", "Gia dụng", "Thời trang", "Thực phẩm", "Văn phòng phẩm", "Khác"]
 
 # --- KẾT NỐI GOOGLE SHEETS ---
 @st.cache_resource(ttl=600)
@@ -16,29 +20,31 @@ def ket_noi_gsheets():
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(creds)
     sheet = client.open_by_url(st.secrets["google_sheet_url"])
-    return sheet.worksheet("NhanSu"), sheet.worksheet("SanPham")
+    # KẾT NỐI THÊM TAB LỊCH SỬ
+    return sheet.worksheet("NhanSu"), sheet.worksheet("SanPham"), sheet.worksheet("LichSu")
 
 try:
-    ws_nhansu, ws_sanpham = ket_noi_gsheets()
+    ws_nhansu, ws_sanpham, ws_lichsu = ket_noi_gsheets()
 except Exception as e:
-    st.error("❌ Lỗi kết nối Google Sheets. Vui lòng kiểm tra lại Secrets.")
+    st.error("❌ Lỗi kết nối Google Sheets. Vui lòng kiểm tra lại cấu hình.")
     st.stop()
 
-# --- KHỞI TẠO BIẾN BỘ NHỚ ---
-if 'nguoi_dung' not in st.session_state:
-    st.session_state.nguoi_dung = None
-if 'thong_bao' not in st.session_state:
-    st.session_state.thong_bao = None
+# --- HÀM GHI NHẬT KÝ LỊCH SỬ (AUDIT TRAIL) ---
+def ghi_log(nguoi_dung, hanh_dong, chi_tiet):
+    tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        ws_lichsu.append_row([tg, nguoi_dung, hanh_dong, chi_tiet])
+    except:
+        pass # Bỏ qua nếu lỗi mạng nhẹ để không gián đoạn app
 
-# Lấy dữ liệu nhân sự
+if 'nguoi_dung' not in st.session_state: st.session_state.nguoi_dung = None
+if 'thong_bao' not in st.session_state: st.session_state.thong_bao = None
+
 data_nhansu = ws_nhansu.get_all_records()
 
-# --- HÀM KIỂM TRA QUYỀN HẠN ---
 def kiem_tra_quyen(user, quyen_can_check):
-    if user['vai_tro'] == 'admin':
-        return True
-    danh_sach_quyen = str(user['quyen']).split(', ')
-    return quyen_can_check in danh_sach_quyen
+    if user['vai_tro'] == 'admin': return True
+    return quyen_can_check in str(user.get('quyen', '')).split(', ')
 
 # --- GIAO DIỆN ĐĂNG NHẬP ---
 if st.session_state.nguoi_dung is None:
@@ -49,8 +55,13 @@ if st.session_state.nguoi_dung is None:
         if st.form_submit_button("Đăng Nhập"):
             user_data = next((user for user in data_nhansu if str(user['tai_khoan']) == tk_nhap and str(user['mat_khau']) == mk_nhap), None)
             if user_data:
-                st.session_state.nguoi_dung = user_data
-                st.rerun()
+                # KIỂM TRA TÀI KHOẢN CÓ BỊ KHÓA KHÔNG
+                if str(user_data.get('trang_thai', 'HoatDong')) == 'DaKhoa':
+                    st.error("❌ Tài khoản của bạn đã bị khóa! Vui lòng liên hệ Admin.")
+                else:
+                    st.session_state.nguoi_dung = user_data
+                    ghi_log(user_data['ten_that'], "Đăng nhập", "Truy cập hệ thống")
+                    st.rerun()
             else:
                 st.error("❌ Sai tên đăng nhập hoặc mật khẩu!")
 
@@ -59,288 +70,276 @@ else:
     user = st.session_state.nguoi_dung
     
     if st.session_state.thong_bao:
-        st.success(st.session_state.thong_bao)
+        st.toast(st.session_state.thong_bao, icon="🔔")
         st.session_state.thong_bao = None 
 
     with st.sidebar:
         st.success(f"👤 Chào: **{user['ten_that']}**")
-        st.caption(f"Vai trò: {user['vai_tro'].upper()}")
-        
         if user['vai_tro'] == 'admin':
             st.info("Quyền: TOÀN QUYỀN ADMIN")
+            trang_hien_tai = st.radio("Chuyển trang:", ["📦 Quản lý Sản Phẩm", "👥 Quản lý Nhân Sự", "📖 Lịch sử Hoạt động"])
         else:
             st.info(f"Quyền: {user['quyen']}")
-            
-        if user['vai_tro'] == 'admin':
-            trang_hien_tai = st.radio("Chuyển trang:", ["📦 Quản lý Sản Phẩm", "👥 Quản lý Nhân Sự"])
-        else:
             trang_hien_tai = "📦 Quản lý Sản Phẩm"
             
         st.divider()
-        
-        # --- ĐỔI MẬT KHẨU CÁ NHÂN ---
-        with st.expander("🔑 Đổi Mật Khẩu Cá Nhân", expanded=False):
+        with st.expander("🔑 Đổi Mật Khẩu", expanded=False):
             with st.form("form_doi_mk"):
-                mk_cu = st.text_input("Mật khẩu hiện tại:", type="password")
+                mk_cu = st.text_input("Mật khẩu cũ:", type="password")
                 mk_moi = st.text_input("Mật khẩu mới:", type="password")
-                mk_xac_nhan = st.text_input("Xác nhận mật khẩu mới:", type="password")
-                
-                if st.form_submit_button("Cập Nhật Mật Khẩu"):
-                    if mk_cu != str(user['mat_khau']):
-                        st.error("❌ Mật khẩu hiện tại không đúng!")
-                    elif mk_moi != mk_xac_nhan:
-                        st.error("❌ Mật khẩu xác nhận không khớp!")
-                    elif len(mk_moi) < 4:
-                        st.error("⚠️ Mật khẩu mới phải có ít nhất 4 ký tự!")
+                if st.form_submit_button("Cập Nhật"):
+                    if mk_cu != str(user['mat_khau']) or len(mk_moi) < 4:
+                        st.error("Sai MK cũ hoặc MK mới quá ngắn!")
                     else:
-                        try:
-                            # in_column=1 giúp tìm chính xác ở cột Tài Khoản, tránh trùng lặp ngẫu nhiên
-                            cell_tk = ws_nhansu.find(str(user['tai_khoan']), in_column=1)
-                            if cell_tk:
-                                ws_nhansu.update(values=[[mk_moi]], range_name=f"B{cell_tk.row}")
-                                st.session_state.nguoi_dung['mat_khau'] = mk_moi 
-                                st.success("✅ Đổi mật khẩu thành công!")
-                            else:
-                                st.error("Lỗi: Không tìm thấy tài khoản trên hệ thống.")
-                        except Exception as e:
-                            st.error(f"Lỗi hệ thống: {e}")
+                        cell_tk = ws_nhansu.find(str(user['tai_khoan']), in_column=1)
+                        if cell_tk:
+                            ws_nhansu.update(values=[[mk_moi]], range_name=f"B{cell_tk.row}")
+                            st.session_state.nguoi_dung['mat_khau'] = mk_moi 
+                            ghi_log(user['ten_that'], "Bảo mật", "Tự đổi mật khẩu")
+                            st.success("✅ Đổi mật khẩu thành công!")
                             
         st.divider()
         if st.button("🚪 Đăng Xuất"):
+            ghi_log(user['ten_that'], "Đăng xuất", "Rời hệ thống")
             st.session_state.nguoi_dung = None
             st.rerun()
 
-    # ================= QUẢN LÝ NHÂN SỰ (ADMIN) =================
+    # ================= 1. QUẢN LÝ NHÂN SỰ (Có tính năng Khóa Tài Khoản) =================
     if trang_hien_tai == "👥 Quản lý Nhân Sự":
-        st.title("👥 Quản Lý Tài Khoản Nhân Viên")
+        st.title("👥 Quản Lý Nhân Sự & Phân Quyền")
         
-        # 1. TẠO TÀI KHOẢN MỚI
-        with st.form("tao_tai_khoan", clear_on_submit=True):
-            st.subheader("➕ Cấp tài khoản mới")
-            col1, col2 = st.columns(2)
-            with col1:
-                tk_moi = st.text_input("Tên đăng nhập (viết liền không dấu):")
+        col_ns1, col_ns2 = st.columns(2)
+        with col_ns1:
+            with st.form("tao_tai_khoan", clear_on_submit=True):
+                st.subheader("➕ Cấp tài khoản mới")
+                tk_moi = st.text_input("Tên đăng nhập:")
                 mk_moi = st.text_input("Mật khẩu:")
-            with col2:
-                ten_that_moi = st.text_input("Tên thật nhân viên:")
-                st.write("☑️ Tích chọn các quyền được phép:")
-                q_them = st.checkbox("Thêm Sản Phẩm (Add)")
-                q_sua = st.checkbox("Sửa Sản Phẩm (Edit)")
-                q_xoa = st.checkbox("Xóa Sản Phẩm (Delete)")
-                q_xuat = st.checkbox("Xuất Excel (Export)")
+                ten_that_moi = st.text_input("Tên thật:")
+                q_them = st.checkbox("Thêm Sản Phẩm")
+                q_sua = st.checkbox("Sửa Sản Phẩm")
+                q_xoa = st.checkbox("Xóa Sản Phẩm")
+                q_xuat = st.checkbox("Xuất Excel")
                 
-            if st.form_submit_button("Tạo Tài Khoản"):
-                if tk_moi and mk_moi and ten_that_moi:
-                    danh_sach_tk = [str(u['tai_khoan']) for u in data_nhansu]
-                    if tk_moi in danh_sach_tk:
-                        st.error("❌ Tên đăng nhập này đã tồn tại!")
-                    else:
-                        quyen_duoc_cap = []
-                        if q_them: quyen_duoc_cap.append("Them")
-                        if q_sua: quyen_duoc_cap.append("Sua")
-                        if q_xoa: quyen_duoc_cap.append("Xoa")
-                        if q_xuat: quyen_duoc_cap.append("Xuat")
-                        chuoi_quyen = ", ".join(quyen_duoc_cap) if quyen_duoc_cap else "ChiXem"
-                        
-                        ws_nhansu.append_row([tk_moi, mk_moi, ten_that_moi, 'nhan_vien', chuoi_quyen])
-                        st.session_state.thong_bao = "✅ Tạo tài khoản thành công!"
-                        st.rerun()
-                else:
-                    st.error("⚠️ Vui lòng điền đủ thông tin!")
-                    
-        st.divider()
-        
-        # 2. TÍNH NĂNG MỚI: ADMIN RESET MẬT KHẨU
-        st.subheader("🔄 Đặt Lại Mật Khẩu (Khẩn Cấp)")
-        with st.expander("Bấm vào đây để Reset mật khẩu nhân viên", expanded=False):
-            # Lấy danh sách tài khoản (loại trừ admin để tránh Admin tự khóa mình)
-            danh_sach_nv = [str(u['tai_khoan']) for u in data_nhansu if str(u['vai_tro']) != 'admin']
-            
-            if danh_sach_nv:
-                with st.form("form_reset_mk"):
-                    tk_can_reset = st.selectbox("📌 Chọn tài khoản cần đặt lại mật khẩu:", danh_sach_nv)
-                    mk_reset_moi = st.text_input("🔑 Nhập mật khẩu mới cho nhân viên này:", type="password")
-                    
-                    if st.form_submit_button("Tiến Hành Reset"):
-                        if len(mk_reset_moi) < 4:
-                            st.error("⚠️ Mật khẩu mới phải có ít nhất 4 ký tự!")
+                if st.form_submit_button("Tạo Tài Khoản"):
+                    if tk_moi and mk_moi and ten_that_moi:
+                        if tk_moi in [str(u['tai_khoan']) for u in data_nhansu]:
+                            st.error("Tên đăng nhập đã tồn tại!")
                         else:
-                            try:
-                                cell_tk = ws_nhansu.find(tk_can_reset, in_column=1)
-                                if cell_tk:
-                                    ws_nhansu.update(values=[[mk_reset_moi]], range_name=f"B{cell_tk.row}")
-                                    st.session_state.thong_bao = f"✅ Đã reset mật khẩu cho tài khoản '{tk_can_reset}' thành công!"
-                                    st.rerun()
-                                else:
-                                    st.error("❌ Không tìm thấy tài khoản này trên hệ thống.")
-                            except Exception as e:
-                                st.error(f"Lỗi hệ thống: {e}")
-            else:
-                st.info("Chưa có tài khoản nhân viên nào để thao tác.")
-
-        st.divider()
+                            quyen = ", ".join([q for q, checked in zip(["Them", "Sua", "Xoa", "Xuat"], [q_them, q_sua, q_xoa, q_xuat]) if checked])
+                            if not quyen: quyen = "ChiXem"
+                            # Thêm HoatDong vào cột F (trang_thai)
+                            ws_nhansu.append_row([tk_moi, mk_moi, ten_that_moi, 'nhan_vien', quyen, 'HoatDong'])
+                            ghi_log(user['ten_that'], "Nhân sự", f"Tạo tài khoản mới: {tk_moi}")
+                            st.session_state.thong_bao = "✅ Đã tạo tài khoản!"
+                            st.rerun()
         
-        # 3. HIỂN THỊ DANH SÁCH NHÂN SỰ
+        with col_ns2:
+            st.subheader("🚫 Quản Lý Trạng Thái (Khóa/Mở)")
+            danh_sach_nv = [str(u['tai_khoan']) for u in data_nhansu if str(u['vai_tro']) != 'admin']
+            if danh_sach_nv:
+                with st.form("form_khoa_tk"):
+                    tk_thao_tac = st.selectbox("Chọn tài khoản:", danh_sach_nv)
+                    hanh_dong = st.radio("Hành động:", ["Mở Khóa (HoatDong)", "Đình Chỉ (DaKhoa)", "Xóa Vĩnh Viễn"])
+                    if st.form_submit_button("Thực Thi"):
+                        cell_tk = ws_nhansu.find(tk_thao_tac, in_column=1)
+                        if cell_tk:
+                            if hanh_dong == "Xóa Vĩnh Viễn":
+                                ws_nhansu.delete_rows(cell_tk.row)
+                                log_msg = f"Xóa vĩnh viễn tài khoản: {tk_thao_tac}"
+                            else:
+                                trang_thai_moi = "HoatDong" if "Mở Khóa" in hanh_dong else "DaKhoa"
+                                ws_nhansu.update(values=[[trang_thai_moi]], range_name=f"F{cell_tk.row}")
+                                log_msg = f"Đổi trạng thái {tk_thao_tac} thành {trang_thai_moi}"
+                            ghi_log(user['ten_that'], "Nhân sự", log_msg)
+                            st.session_state.thong_bao = f"✅ Đã thực thi: {log_msg}"
+                            st.rerun()
+
         st.subheader("📋 Danh sách nhân sự hiện tại")
         df_nhansu = pd.DataFrame(data_nhansu)
         if not df_nhansu.empty:
-            df_nhansu_hien_thi = df_nhansu.copy()
-            df_nhansu_hien_thi['mat_khau'] = "********" # Mã hóa hiển thị
-            st.dataframe(df_nhansu_hien_thi, use_container_width=True)
+            df_nhansu['mat_khau'] = "********"
+            st.dataframe(df_nhansu, use_container_width=True)
 
-    # ================= QUẢN LÝ SẢN PHẨM =================
+    # ================= 2. LỊCH SỬ HOẠT ĐỘNG =================
+    elif trang_hien_tai == "📖 Lịch sử Hoạt động":
+        st.title("📖 Nhật Ký Hệ Thống (Audit Trail)")
+        st.info("Ghi lại toàn bộ hành vi thêm, sửa, xóa, đăng nhập của mọi thành viên để kiểm soát.")
+        data_lichsu = ws_lichsu.get_all_records()
+        df_ls = pd.DataFrame(data_lichsu)
+        if not df_ls.empty:
+            df_ls = df_ls.sort_values(by='thoi_gian', ascending=False)
+            st.dataframe(df_ls, use_container_width=True)
+            
+            if st.button("🗑️ Xóa sạch lịch sử cũ"):
+                ws_lichsu.clear()
+                ws_lichsu.append_row(["thoi_gian", "nguoi_thao_tac", "hanh_dong", "chi_tiet"])
+                st.rerun()
+        else:
+            st.write("Chưa có ghi nhận nào.")
+
+    # ================= 3. QUẢN LÝ SẢN PHẨM (Có Dashboard, Nhập Excel, Danh mục) =================
     elif trang_hien_tai == "📦 Quản lý Sản Phẩm":
-        st.title("📦 Bảng Trắng Quản Lý Sản Phẩm")
+        st.title("📦 Hệ Thống Kho Hàng Trực Tuyến")
         
         data_sanpham = ws_sanpham.get_all_records()
         df_sp = pd.DataFrame(data_sanpham)
         
-        # --- DASHBOARD ---
-        st.subheader("📈 Bảng Thống Kê Tổng Quan")
+        # Xử lý an toàn dữ liệu số
         if not df_sp.empty:
-            df_sp['so_luong'] = pd.to_numeric(df_sp['so_luong'], errors='coerce').fillna(0)
-            df_sp['gia_ban'] = pd.to_numeric(df_sp['gia_ban'], errors='coerce').fillna(0)
-            tong_loai_sp = len(df_sp)
-            tong_so_luong = int(df_sp['so_luong'].sum())
-            tong_gia_tri = int((df_sp['so_luong'] * df_sp['gia_ban']).sum())
-        else:
-            tong_loai_sp = tong_so_luong = tong_gia_tri = 0
+            df_sp['so_luong'] = pd.to_numeric(df_sp.get('so_luong', 0), errors='coerce').fillna(0)
+            df_sp['gia_ban'] = pd.to_numeric(df_sp.get('gia_ban', 0), errors='coerce').fillna(0)
             
+            # TÍNH NĂNG CẢNH BÁO TỒN KHO THẤP
+            df_sp['Cảnh Báo'] = df_sp['so_luong'].apply(lambda x: "🔴 Sắp hết" if x < 5 else "🟢 Đủ hàng")
+
+        # --- DASHBOARD & BIỂU ĐỒ ---
+        st.subheader("📈 Phân Tích Tổng Quan")
         col_m1, col_m2, col_m3 = st.columns(3)
-        col_m1.metric("📦 Tổng Số Mẫu Sản Phẩm", f"{tong_loai_sp} mã")
-        col_m2.metric("🛒 Tổng Số Lượng Tồn", f"{tong_so_luong:,}".replace(",", "."))
-        col_m3.metric("💰 Tổng Giá Trị Kho", f"{tong_gia_tri:,}".replace(",", ".") + " VNĐ")
-        
-        st.divider()
-        
-        danh_sach_ma_sp = df_sp['ma_sp'].astype(str).tolist() if not df_sp.empty else []
-
-        # --- KHU VỰC 1: THÊM SẢN PHẨM ---
-        if kiem_tra_quyen(user, 'Them'):
-            with st.expander("➕ Bấm vào đây để Thêm Sản Phẩm Mới", expanded=False):
-                with st.form("form_nhap_lieu", clear_on_submit=True):
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        ma_sp = st.text_input("1. Mã sản phẩm (*)")
-                        so_luong = st.number_input("3. Số lượng", min_value=0, step=1)
-                    with col2:
-                        ten_sp = st.text_input("2. Tên sản phẩm (*)")
-                        gia_ban = st.number_input("4. Giá bán (VNĐ)", min_value=0, step=1000)
-                    ghi_chu = st.text_area("5. Ghi chú")
-                    
-                    if st.form_submit_button("Lưu Sản Phẩm"):
-                        if not ma_sp or not ten_sp:
-                            st.error("⚠️ Thiếu mã hoặc tên sản phẩm!")
-                        elif str(ma_sp) in danh_sach_ma_sp:
-                            st.error(f"❌ Mã sản phẩm '{ma_sp}' đã tồn tại! Vui lòng chọn mã khác.")
-                        else:
-                            thoi_gian_nhap = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            ws_sanpham.append_row([str(ma_sp), str(ten_sp), so_luong, gia_ban, str(ghi_chu), user['ten_that'], thoi_gian_nhap])
-                            st.session_state.thong_bao = f"✅ Đã thêm '{ten_sp}' thành công!"
-                            st.rerun()
+        if not df_sp.empty:
+            tong_loai = len(df_sp)
+            tong_sl = int(df_sp['so_luong'].sum())
+            tong_tien = int((df_sp['so_luong'] * df_sp['gia_ban']).sum())
+            
+            col_m1.metric("📦 Tổng Số Mẫu SP", f"{tong_loai} mã")
+            col_m2.metric("🛒 Tổng Hàng Tồn", f"{tong_sl:,}".replace(",", "."))
+            col_m3.metric("💰 Tổng Vốn Kho", f"{tong_tien:,}".replace(",", ".") + " đ")
+            
+            # Vẽ biểu đồ tỷ trọng danh mục
+            df_chart = df_sp.groupby('danh_muc')['so_luong'].sum().reset_index()
+            pie_chart = alt.Chart(df_chart).mark_arc(innerRadius=40).encode(
+                theta=alt.Theta(field="so_luong", type="quantitative"),
+                color=alt.Color(field="danh_muc", type="nominal"),
+                tooltip=["danh_muc", "so_luong"]
+            ).properties(height=250, title="Tỷ trọng hàng theo Danh mục")
+            
+            with st.expander("📊 Bấm để xem Biểu đồ Tỷ trọng"):
+                st.altair_chart(pie_chart, use_container_width=True)
         else:
-            st.info("🔒 Tài khoản của bạn không được cấp quyền Thêm sản phẩm mới.")
+            st.info("Chưa có dữ liệu để vẽ biểu đồ.")
+        
+        st.divider()
+
+        # --- KHU VỰC THÊM MỚI ---
+        if kiem_tra_quyen(user, 'Them'):
+            col_add1, col_add2 = st.columns(2)
+            
+            with col_add1:
+                with st.expander("➕ Nhập Thủ Công", expanded=False):
+                    with st.form("form_nhap"):
+                        ma_sp = st.text_input("Mã SP (*)")
+                        ten_sp = st.text_input("Tên SP (*)")
+                        danh_muc = st.selectbox("Danh mục", DANH_MUC_SP)
+                        sl = st.number_input("Số lượng", min_value=0, step=1)
+                        gia = st.number_input("Giá bán", min_value=0, step=1000)
+                        ghi_chu = st.text_input("Ghi chú")
+                        if st.form_submit_button("Lưu Sản Phẩm"):
+                            danh_sach_ma = df_sp['ma_sp'].astype(str).tolist() if not df_sp.empty else []
+                            if not ma_sp or not ten_sp: st.error("Thiếu mã/tên!")
+                            elif ma_sp in danh_sach_ma: st.error("Mã SP đã tồn tại!")
+                            else:
+                                tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], tg])
+                                ghi_log(user['ten_that'], "Thêm SP", f"Thêm {sl} cái {ten_sp} ({ma_sp})")
+                                st.session_state.thong_bao = "✅ Đã thêm thành công!"
+                                st.rerun()
+            
+            # NHẬP HÀNG LOẠT BẰNG EXCEL
+            with col_add2:
+                with st.expander("📥 Import Bằng File Excel", expanded=False):
+                    st.caption("File Excel cần có các cột: ma_sp, ten_sp, danh_muc, so_luong, gia_ban, ghi_chu")
+                    uploaded_file = st.file_uploader("Kéo thả file .xlsx vào đây", type=['xlsx'])
+                    if uploaded_file and st.button("Bắt đầu Import"):
+                        try:
+                            df_import = pd.read_excel(uploaded_file).fillna("")
+                            # Chuẩn bị danh sách data để đẩy lên 1 lần (Bulk Insert)
+                            du_lieu_day_len = []
+                            tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            danh_sach_ma = df_sp['ma_sp'].astype(str).tolist() if not df_sp.empty else []
+                            
+                            for _, row in df_import.iterrows():
+                                if str(row['ma_sp']) not in danh_sach_ma:
+                                    du_lieu_day_len.append([str(row['ma_sp']), str(row['ten_sp']), str(row.get('danh_muc', 'Khác')), int(row['so_luong']), int(row['gia_ban']), str(row['ghi_chu']), user['ten_that'], tg])
+                                    
+                            if du_lieu_day_len:
+                                ws_sanpham.append_rows(du_lieu_day_len)
+                                ghi_log(user['ten_that'], "Import Excel", f"Nhập hàng loạt {len(du_lieu_day_len)} sản phẩm")
+                                st.session_state.thong_bao = f"✅ Đã import {len(du_lieu_day_len)} sản phẩm!"
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Mọi mã trong file đều đã tồn tại trong kho hoặc file trống.")
+                        except Exception as e:
+                            st.error(f"Lỗi đọc file: Vui lòng kiểm tra lại tên các cột. Chi tiết: {e}")
 
         st.divider()
 
-        # --- KHU VỰC 2: THANH TÌM KIẾM & BẢNG DỮ LIỆU ---
-        st.subheader("📊 Dữ Liệu Chi Tiết")
-        tu_khoa = st.text_input("🔍 Nhập Mã hoặc Tên sản phẩm để tìm kiếm nhanh:")
+        # --- BẢNG DỮ LIỆU CHÍNH ---
+        st.subheader("📊 Bảng Quản Lý Tương Tác")
+        tu_khoa = st.text_input("🔍 Nhập Tên, Mã SP hoặc Danh Mục để lọc:")
         
         if not df_sp.empty:
             if tu_khoa:
                 df_sp = df_sp[
                     df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False, na=False) |
-                    df_sp['ten_sp'].astype(str).str.contains(tu_khoa, case=False, na=False)
+                    df_sp['ten_sp'].astype(str).str.contains(tu_khoa, case=False, na=False) |
+                    df_sp['danh_muc'].astype(str).str.contains(tu_khoa, case=False, na=False)
                 ]
                 
-            if df_sp.empty:
-                st.info(f"Không tìm thấy sản phẩm nào khớp với từ khóa: **{tu_khoa}**")
-            else:
-                df_sp.insert(0, "Chọn", False)
-                cot_bi_khoa = df_sp.columns.drop("Chọn").tolist()
+            df_sp.insert(0, "Chọn", False)
+            cot_bi_khoa = df_sp.columns.drop("Chọn").tolist()
+            
+            # Tùy chỉnh hiển thị cột trong bảng
+            col_config = {
+                "Chọn": st.column_config.CheckboxColumn("☑️", width="small"),
+                "Cảnh Báo": st.column_config.TextColumn("Trạng Thái", width="medium"),
+                "ma_sp": "Mã SP", "ten_sp": "Tên SP", "danh_muc": "Danh Mục", "so_luong": "SL", 
+                "gia_ban": "Giá", "ghi_chu": "Ghi Chú", "nguoi_nhap": "Người Nhập", "thoi_gian": "Cập Nhật Lần Cuối"
+            }
+            
+            edited_df = st.data_editor(df_sp, hide_index=True, use_container_width=True, disabled=cot_bi_khoa, column_config=col_config)
+            
+            danh_sach_chon = edited_df[edited_df["Chọn"] == True]
+            sl_chon = len(danh_sach_chon)
+            
+            if sl_chon > 0:
+                df_xuat = danh_sach_chon.drop(columns=["Chọn"])
                 
-                edited_df = st.data_editor(
-                    df_sp,
-                    hide_index=True,
-                    use_container_width=True,
-                    disabled=cot_bi_khoa,
-                    column_config={
-                        "Chọn": st.column_config.CheckboxColumn("☑️ Chọn", help="Tick để thao tác"),
-                        "ma_sp": "Mã SP", "ten_sp": "Tên SP", "so_luong": "Số Lượng", 
-                        "gia_ban": "Giá Bán", "ghi_chu": "Ghi Chú", "nguoi_nhap": "Người Nhập", "thoi_gian": "Thời Gian"
-                    }
-                )
+                # Nút Xuất Excel
+                if kiem_tra_quyen(user, 'Xuat'):
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        df_xuat.to_excel(writer, index=False)
+                    st.download_button("📥 Tải Dữ Liệu Đã Chọn", data=output.getvalue(), file_name=f"Kho_{datetime.now().strftime('%d%m%y_%H%M')}.xlsx")
                 
-                danh_sach_chon = edited_df[edited_df["Chọn"] == True]
-                so_luong_chon = len(danh_sach_chon)
-                
-                # --- KHU VỰC 3: THAO TÁC VỚI DỮ LIỆU ĐÃ CHỌN ---
-                if so_luong_chon > 0:
-                    st.info(f"📌 Đang chọn **{so_luong_chon}** sản phẩm.")
-                    df_xuat_excel = danh_sach_chon.drop(columns=["Chọn"])
-                    
-                    co_quyen_xuat = kiem_tra_quyen(user, 'Xuat')
-                    co_quyen_sua = kiem_tra_quyen(user, 'Sua')
-                    co_quyen_xoa = kiem_tra_quyen(user, 'Xoa')
-                    
-                    if not (co_quyen_xuat or co_quyen_sua or co_quyen_xoa):
-                        st.warning("🔒 Bạn chỉ có quyền Xem, không có quyền thao tác trên các sản phẩm đã chọn.")
-                    
-                    if co_quyen_xuat:
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                            df_xuat_excel.to_excel(writer, index=False, sheet_name='Sản Phẩm Đã Chọn')
-                        ten_file = f"San_Pham_Da_Chon_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                        st.download_button("📥 Xuất File Excel (Chỉ file được chọn)", data=output.getvalue(), file_name=ten_file, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    
-                    if co_quyen_sua:
-                        if so_luong_chon == 1:
-                            st.subheader("✏️ Chỉnh Sửa Sản Phẩm Này")
-                            ma_sp_dang_sua = str(danh_sach_chon.iloc[0]['ma_sp'])
+                # Form Sửa
+                if kiem_tra_quyen(user, 'Sua') and sl_chon == 1:
+                    st.subheader("✏️ Chỉnh Sửa Sản Phẩm")
+                    sp_dang_sua = danh_sach_chon.iloc[0]
+                    with st.form("form_sua"):
+                        col_s1, col_s2, col_s3 = st.columns(3)
+                        with col_s1:
+                            t_moi = st.text_input("Tên", value=str(sp_dang_sua['ten_sp']))
+                            sl_moi = st.number_input("SL", value=int(sp_dang_sua['so_luong']))
+                        with col_s2:
+                            dm_moi = st.selectbox("Danh mục", DANH_MUC_SP, index=DANH_MUC_SP.index(sp_dang_sua['danh_muc']) if sp_dang_sua['danh_muc'] in DANH_MUC_SP else 0)
+                            gia_moi = st.number_input("Giá", value=int(sp_dang_sua['gia_ban']))
+                        with col_s3:
+                            gc_moi = st.text_area("Ghi chú", value=str(sp_dang_sua['ghi_chu']))
                             
-                            with st.form("form_sua"):
-                                col_s1, col_s2 = st.columns(2)
-                                with col_s1:
-                                    st.text_input("Mã SP (Không được sửa)", value=ma_sp_dang_sua, disabled=True)
-                                    ten_moi = st.text_input("Tên sản phẩm", value=str(danh_sach_chon.iloc[0]['ten_sp']))
-                                    sl_moi = st.number_input("Số lượng", value=int(danh_sach_chon.iloc[0]['so_luong']), step=1)
-                                with col_s2:
-                                    gia_moi = st.number_input("Giá bán (VNĐ)", value=int(danh_sach_chon.iloc[0]['gia_ban']), step=1000)
-                                    ghi_chu_moi = st.text_area("Ghi chú", value=str(danh_sach_chon.iloc[0]['ghi_chu']))
-                                
-                                if st.form_submit_button("Lưu Thay Đổi"):
-                                    try:
-                                        cell = ws_sanpham.find(ma_sp_dang_sua)
-                                        if cell:
-                                            thoi_gian_sua = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                            nguoi_sua = f"{user['ten_that']} (Sửa)"
-                                            ws_sanpham.update(values=[[ma_sp_dang_sua, ten_moi, sl_moi, gia_moi, ghi_chu_moi, nguoi_sua, thoi_gian_sua]], range_name=f"A{cell.row}:G{cell.row}")
-                                            st.session_state.thong_bao = "✅ Cập nhật thành công!"
-                                            st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Lỗi hệ thống: {e}")
-                        else:
-                            st.warning("⚠️ Để chỉnh sửa, vui lòng chỉ tick chọn 1 sản phẩm duy nhất.")
-                    
-                    if co_quyen_xoa:
-                        if st.button(f"🗑️ XÓA {so_luong_chon} SẢN PHẨM ĐÃ CHỌN", type="primary"):
-                            ma_sp_can_xoa = danh_sach_chon['ma_sp'].astype(str).tolist()
-                            rows_to_delete = []
-                            for ma in ma_sp_can_xoa:
-                                try:
-                                    cell = ws_sanpham.find(ma)
-                                    if cell:
-                                        rows_to_delete.append(cell.row)
-                                except:
-                                    pass
-                                    
-                            rows_to_delete.sort(reverse=True)
-                            for r in rows_to_delete:
-                                ws_sanpham.delete_row(r)
-                                
-                            st.session_state.thong_bao = f"🗑️ Đã xóa an toàn {len(rows_to_delete)} sản phẩm!"
-                            st.rerun()
-                            
-        else:
-            st.info("Bảng dữ liệu đang trống. Hãy thêm sản phẩm mới.")
+                        if st.form_submit_button("Lưu Cập Nhật"):
+                            cell = ws_sanpham.find(str(sp_dang_sua['ma_sp']))
+                            if cell:
+                                tg_sua = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ws_sanpham.update(values=[[str(sp_dang_sua['ma_sp']), t_moi, dm_moi, sl_moi, gia_moi, gc_moi, f"{user['ten_that']} (Sửa)", tg_sua]], range_name=f"A{cell.row}:H{cell.row}")
+                                ghi_log(user['ten_that'], "Sửa SP", f"Cập nhật mã {sp_dang_sua['ma_sp']}")
+                                st.session_state.thong_bao = "✅ Đã lưu cập nhật!"
+                                st.rerun()
+                
+                # Nút Xóa
+                if kiem_tra_quyen(user, 'Xoa'):
+                    if st.button(f"🗑️ XÓA {sl_chon} SẢN PHẨM", type="primary"):
+                        ma_xoa = danh_sach_chon['ma_sp'].astype(str).tolist()
+                        rows_del = [ws_sanpham.find(m).row for m in ma_xoa if ws_sanpham.find(m)]
+                        for r in sorted(rows_del, reverse=True): ws_sanpham.delete_row(r)
+                        ghi_log(user['ten_that'], "Xóa SP", f"Xóa {sl_chon} sản phẩm: {', '.join(ma_xoa)}")
+                        st.session_state.thong_bao = f"🗑️ Đã xóa {sl_chon} SP!"
+                        st.rerun()
