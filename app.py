@@ -33,6 +33,17 @@ if 'thong_bao' not in st.session_state:
 # Lấy dữ liệu nhân sự
 data_nhansu = ws_nhansu.get_all_records()
 
+# --- HÀM KIỂM TRA QUYỀN HẠN ---
+def kiem_tra_quyen(user, quyen_can_check):
+    # Admin mặc định có MỌI quyền
+    if user['vai_tro'] == 'admin':
+        return True
+    
+    # Với nhân viên, kiểm tra xem quyền đó có nằm trong chuỗi quyền của họ không
+    # Ví dụ: user['quyen'] = "Them, Xuat"
+    danh_sach_quyen = str(user['quyen']).split(', ')
+    return quyen_can_check in danh_sach_quyen
+
 # --- GIAO DIỆN ĐĂNG NHẬP ---
 if st.session_state.nguoi_dung is None:
     st.title("🔒 Đăng Nhập Hệ Thống")
@@ -57,7 +68,14 @@ else:
 
     with st.sidebar:
         st.success(f"👤 Chào: **{user['ten_that']}**")
-        st.caption(f"Vai trò: {user['vai_tro'].upper()} | Quyền: {user['quyen'].upper()}")
+        st.caption(f"Vai trò: {user['vai_tro'].upper()}")
+        
+        # Hiển thị huy hiệu quyền cho user dễ thấy
+        if user['vai_tro'] == 'admin':
+            st.info("Quyền: TOÀN QUYỀN ADMIN")
+        else:
+            st.info(f"Quyền: {user['quyen']}")
+            
         if user['vai_tro'] == 'admin':
             trang_hien_tai = st.radio("Chuyển trang:", ["📦 Quản lý Sản Phẩm", "👥 Quản lý Nhân Sự"])
         else:
@@ -68,24 +86,40 @@ else:
             st.session_state.nguoi_dung = None
             st.rerun()
 
-    # ================= QUẢN LÝ NHÂN SỰ =================
+    # ================= QUẢN LÝ NHÂN SỰ (ADMIN) =================
     if trang_hien_tai == "👥 Quản lý Nhân Sự":
         st.title("👥 Quản Lý Tài Khoản Nhân Viên")
         with st.form("tao_tai_khoan", clear_on_submit=True):
+            st.subheader("➕ Cấp tài khoản mới")
             col1, col2 = st.columns(2)
             with col1:
                 tk_moi = st.text_input("Tên đăng nhập (viết liền không dấu):")
                 mk_moi = st.text_input("Mật khẩu:")
             with col2:
                 ten_that_moi = st.text_input("Tên thật nhân viên:")
-                quyen_moi = st.selectbox("Quyền hạn:", ["chinh_sua", "chi_xem"])
-            if st.form_submit_button("➕ Tạo Tài Khoản"):
+                
+                # CHUYỂN SANG DẠNG TICK CHỌN NHIỀU QUYỀN
+                st.write("☑️ Tích chọn các quyền được phép:")
+                q_them = st.checkbox("Thêm Sản Phẩm (Add)")
+                q_sua = st.checkbox("Sửa Sản Phẩm (Edit)")
+                q_xoa = st.checkbox("Xóa Sản Phẩm (Delete)")
+                q_xuat = st.checkbox("Xuất Excel (Export)")
+                
+            if st.form_submit_button("Tạo Tài Khoản"):
                 if tk_moi and mk_moi and ten_that_moi:
                     danh_sach_tk = [str(u['tai_khoan']) for u in data_nhansu]
                     if tk_moi in danh_sach_tk:
                         st.error("❌ Tên đăng nhập này đã tồn tại!")
                     else:
-                        ws_nhansu.append_row([tk_moi, mk_moi, ten_that_moi, 'nhan_vien', quyen_moi])
+                        # Gom các quyền đã tick thành 1 chuỗi văn bản
+                        quyen_duoc_cap = []
+                        if q_them: quyen_duoc_cap.append("Them")
+                        if q_sua: quyen_duoc_cap.append("Sua")
+                        if q_xoa: quyen_duoc_cap.append("Xoa")
+                        if q_xuat: quyen_duoc_cap.append("Xuat")
+                        chuoi_quyen = ", ".join(quyen_duoc_cap) if quyen_duoc_cap else "ChiXem"
+                        
+                        ws_nhansu.append_row([tk_moi, mk_moi, ten_that_moi, 'nhan_vien', chuoi_quyen])
                         st.session_state.thong_bao = "✅ Tạo tài khoản thành công!"
                         st.rerun()
                 else:
@@ -94,32 +128,26 @@ else:
         st.subheader("📋 Danh sách nhân sự hiện tại")
         st.dataframe(pd.DataFrame(data_nhansu), use_container_width=True)
 
-    # ================= QUẢN LÝ SẢN PHẨM =================
+    # ================= QUẢN LÝ SẢN PHẨM (ADMIN + USER) =================
     elif trang_hien_tai == "📦 Quản lý Sản Phẩm":
-        st.title("📦 Bảng Trắng Quản Lý Sản Phẩm (Real-time)")
+        st.title("📦 Bảng Trắng Quản Lý Sản Phẩm")
         
         data_sanpham = ws_sanpham.get_all_records()
         df_sp = pd.DataFrame(data_sanpham)
         
-        # --- TÍNH NĂNG MỚI: BẢNG THỐNG KÊ (DASHBOARD) TỰ ĐỘNG ---
+        # --- DASHBOARD ---
         st.subheader("📈 Bảng Thống Kê Tổng Quan")
-        
         if not df_sp.empty:
-            # Ép kiểu dữ liệu về dạng số để tính toán cho chuẩn, tránh lỗi do vô tình gõ chữ vào file Google Sheet
             df_sp['so_luong'] = pd.to_numeric(df_sp['so_luong'], errors='coerce').fillna(0)
             df_sp['gia_ban'] = pd.to_numeric(df_sp['gia_ban'], errors='coerce').fillna(0)
-            
             tong_loai_sp = len(df_sp)
             tong_so_luong = int(df_sp['so_luong'].sum())
             tong_gia_tri = int((df_sp['so_luong'] * df_sp['gia_ban']).sum())
         else:
-            tong_loai_sp = 0
-            tong_so_luong = 0
-            tong_gia_tri = 0
+            tong_loai_sp = tong_so_luong = tong_gia_tri = 0
             
         col_m1, col_m2, col_m3 = st.columns(3)
         col_m1.metric("📦 Tổng Số Mẫu Sản Phẩm", f"{tong_loai_sp} mã")
-        # Format số hàng ngàn bằng dấu chấm (VD: 1.000.000)
         col_m2.metric("🛒 Tổng Số Lượng Tồn", f"{tong_so_luong:,}".replace(",", "."))
         col_m3.metric("💰 Tổng Giá Trị Kho", f"{tong_gia_tri:,}".replace(",", ".") + " VNĐ")
         
@@ -127,8 +155,8 @@ else:
         
         danh_sach_ma_sp = df_sp['ma_sp'].astype(str).tolist() if not df_sp.empty else []
 
-        # --- KHU VỰC 1: THÊM SẢN PHẨM MỚI ---
-        if user['quyen'] == 'chinh_sua' or user['vai_tro'] == 'admin':
+        # --- KHU VỰC 1: THÊM SẢN PHẨM (Chỉ hiện nếu có quyền 'Them') ---
+        if kiem_tra_quyen(user, 'Them'):
             with st.expander("➕ Bấm vào đây để Thêm Sản Phẩm Mới", expanded=False):
                 with st.form("form_nhap_lieu", clear_on_submit=True):
                     col1, col2 = st.columns(2)
@@ -151,14 +179,13 @@ else:
                             st.session_state.thong_bao = f"✅ Đã thêm '{ten_sp}' thành công!"
                             st.rerun()
         else:
-            st.warning("⚠️ Tài khoản của bạn chỉ có quyền XEM dữ liệu.")
+            st.info("🔒 Tài khoản của bạn không được cấp quyền Thêm sản phẩm mới.")
 
         st.divider()
 
-        # --- KHU VỰC 2: THANH TÌM KIẾM & BẢNG TRẮNG ---
+        # --- KHU VỰC 2: THANH TÌM KIẾM & BẢNG DỮ LIỆU ---
         st.subheader("📊 Dữ Liệu Chi Tiết")
-        
-        tu_khoa = st.text_input("🔍 Nhập Mã hoặc Tên sản phẩm để tìm kiếm nhanh:", placeholder="VD: SP001 hoặc Bàn phím...")
+        tu_khoa = st.text_input("🔍 Nhập Mã hoặc Tên sản phẩm để tìm kiếm nhanh:")
         
         if not df_sp.empty:
             if tu_khoa:
@@ -193,15 +220,24 @@ else:
                     st.info(f"📌 Đang chọn **{so_luong_chon}** sản phẩm.")
                     df_xuat_excel = danh_sach_chon.drop(columns=["Chọn"])
                     
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_xuat_excel.to_excel(writer, index=False, sheet_name='Sản Phẩm Đã Chọn')
+                    # KIỂM TRA QUYỀN TRƯỚC KHI HIỂN THỊ NÚT
+                    co_quyen_xuat = kiem_tra_quyen(user, 'Xuat')
+                    co_quyen_sua = kiem_tra_quyen(user, 'Sua')
+                    co_quyen_xoa = kiem_tra_quyen(user, 'Xoa')
                     
-                    ten_file = f"San_Pham_Da_Chon_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                    st.download_button("📥 Xuất File Excel (Chỉ file được chọn)", data=output.getvalue(), file_name=ten_file, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    if not (co_quyen_xuat or co_quyen_sua or co_quyen_xoa):
+                        st.warning("🔒 Bạn chỉ có quyền Xem, không có quyền thao tác trên các sản phẩm đã chọn.")
                     
-                    if (user['quyen'] == 'chinh_sua' or user['vai_tro'] == 'admin'):
-                        # SỬA SẢN PHẨM
+                    # 1. NÚT XUẤT EXCEL
+                    if co_quyen_xuat:
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df_xuat_excel.to_excel(writer, index=False, sheet_name='Sản Phẩm Đã Chọn')
+                        ten_file = f"San_Pham_Da_Chon_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+                        st.download_button("📥 Xuất File Excel (Chỉ file được chọn)", data=output.getvalue(), file_name=ten_file, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    
+                    # 2. KHU VỰC SỬA SẢN PHẨM
+                    if co_quyen_sua:
                         if so_luong_chon == 1:
                             st.subheader("✏️ Chỉnh Sửa Sản Phẩm Này")
                             ma_sp_dang_sua = str(danh_sach_chon.iloc[0]['ma_sp'])
@@ -222,23 +258,18 @@ else:
                                         if cell:
                                             thoi_gian_sua = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                                             nguoi_sua = f"{user['ten_that']} (Sửa)"
-                                            
                                             ws_sanpham.update(values=[[ma_sp_dang_sua, ten_moi, sl_moi, gia_moi, ghi_chu_moi, nguoi_sua, thoi_gian_sua]], range_name=f"A{cell.row}:G{cell.row}")
-                                            
                                             st.session_state.thong_bao = "✅ Cập nhật thành công!"
                                             st.rerun()
-                                        else:
-                                            st.error("❌ Không tìm thấy sản phẩm trên Google Sheets!")
                                     except Exception as e:
                                         st.error(f"Lỗi hệ thống: {e}")
-                                        
                         else:
                             st.warning("⚠️ Để chỉnh sửa, vui lòng chỉ tick chọn 1 sản phẩm duy nhất.")
-                        
-                        # XÓA SẢN PHẨM
+                    
+                    # 3. NÚT XÓA SẢN PHẨM
+                    if co_quyen_xoa:
                         if st.button(f"🗑️ XÓA {so_luong_chon} SẢN PHẨM ĐÃ CHỌN", type="primary"):
                             ma_sp_can_xoa = danh_sach_chon['ma_sp'].astype(str).tolist()
-                            
                             rows_to_delete = []
                             for ma in ma_sp_can_xoa:
                                 try:
