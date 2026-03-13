@@ -78,7 +78,7 @@ else:
             
         st.divider()
         
-        # --- TÍNH NĂNG MỚI: ĐỔI MẬT KHẨU ---
+        # --- ĐỔI MẬT KHẨU CÁ NHÂN ---
         with st.expander("🔑 Đổi Mật Khẩu Cá Nhân", expanded=False):
             with st.form("form_doi_mk"):
                 mk_cu = st.text_input("Mật khẩu hiện tại:", type="password")
@@ -94,12 +94,10 @@ else:
                         st.error("⚠️ Mật khẩu mới phải có ít nhất 4 ký tự!")
                     else:
                         try:
-                            # Tìm tài khoản trên Sheet NhanSu
-                            cell_tk = ws_nhansu.find(str(user['tai_khoan']))
+                            # in_column=1 giúp tìm chính xác ở cột Tài Khoản, tránh trùng lặp ngẫu nhiên
+                            cell_tk = ws_nhansu.find(str(user['tai_khoan']), in_column=1)
                             if cell_tk:
-                                # Cập nhật mật khẩu vào Cột B (Cột thứ 2) của dòng tương ứng
                                 ws_nhansu.update(values=[[mk_moi]], range_name=f"B{cell_tk.row}")
-                                # Cập nhật ngay trong phiên đăng nhập hiện tại
                                 st.session_state.nguoi_dung['mat_khau'] = mk_moi 
                                 st.success("✅ Đổi mật khẩu thành công!")
                             else:
@@ -112,9 +110,11 @@ else:
             st.session_state.nguoi_dung = None
             st.rerun()
 
-    # ================= QUẢN LÝ NHÂN SỰ =================
+    # ================= QUẢN LÝ NHÂN SỰ (ADMIN) =================
     if trang_hien_tai == "👥 Quản lý Nhân Sự":
         st.title("👥 Quản Lý Tài Khoản Nhân Viên")
+        
+        # 1. TẠO TÀI KHOẢN MỚI
         with st.form("tao_tai_khoan", clear_on_submit=True):
             st.subheader("➕ Cấp tài khoản mới")
             col1, col2 = st.columns(2)
@@ -147,10 +147,41 @@ else:
                         st.rerun()
                 else:
                     st.error("⚠️ Vui lòng điền đủ thông tin!")
+                    
         st.divider()
-        st.subheader("📋 Danh sách nhân sự hiện tại")
         
-        # CHỈNH SỬA NHỎ: Ẩn cột mật khẩu của nhân viên để Admin cũng không xem trộm được mật khẩu của họ
+        # 2. TÍNH NĂNG MỚI: ADMIN RESET MẬT KHẨU
+        st.subheader("🔄 Đặt Lại Mật Khẩu (Khẩn Cấp)")
+        with st.expander("Bấm vào đây để Reset mật khẩu nhân viên", expanded=False):
+            # Lấy danh sách tài khoản (loại trừ admin để tránh Admin tự khóa mình)
+            danh_sach_nv = [str(u['tai_khoan']) for u in data_nhansu if str(u['vai_tro']) != 'admin']
+            
+            if danh_sach_nv:
+                with st.form("form_reset_mk"):
+                    tk_can_reset = st.selectbox("📌 Chọn tài khoản cần đặt lại mật khẩu:", danh_sach_nv)
+                    mk_reset_moi = st.text_input("🔑 Nhập mật khẩu mới cho nhân viên này:", type="password")
+                    
+                    if st.form_submit_button("Tiến Hành Reset"):
+                        if len(mk_reset_moi) < 4:
+                            st.error("⚠️ Mật khẩu mới phải có ít nhất 4 ký tự!")
+                        else:
+                            try:
+                                cell_tk = ws_nhansu.find(tk_can_reset, in_column=1)
+                                if cell_tk:
+                                    ws_nhansu.update(values=[[mk_reset_moi]], range_name=f"B{cell_tk.row}")
+                                    st.session_state.thong_bao = f"✅ Đã reset mật khẩu cho tài khoản '{tk_can_reset}' thành công!"
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Không tìm thấy tài khoản này trên hệ thống.")
+                            except Exception as e:
+                                st.error(f"Lỗi hệ thống: {e}")
+            else:
+                st.info("Chưa có tài khoản nhân viên nào để thao tác.")
+
+        st.divider()
+        
+        # 3. HIỂN THỊ DANH SÁCH NHÂN SỰ
+        st.subheader("📋 Danh sách nhân sự hiện tại")
         df_nhansu = pd.DataFrame(data_nhansu)
         if not df_nhansu.empty:
             df_nhansu_hien_thi = df_nhansu.copy()
