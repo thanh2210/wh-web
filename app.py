@@ -101,6 +101,30 @@ else:
         data_sanpham = ws_sanpham.get_all_records()
         df_sp = pd.DataFrame(data_sanpham)
         
+        # --- TÍNH NĂNG MỚI: BẢNG THỐNG KÊ (DASHBOARD) TỰ ĐỘNG ---
+        st.subheader("📈 Bảng Thống Kê Tổng Quan")
+        
+        if not df_sp.empty:
+            # Ép kiểu dữ liệu về dạng số để tính toán cho chuẩn, tránh lỗi do vô tình gõ chữ vào file Google Sheet
+            df_sp['so_luong'] = pd.to_numeric(df_sp['so_luong'], errors='coerce').fillna(0)
+            df_sp['gia_ban'] = pd.to_numeric(df_sp['gia_ban'], errors='coerce').fillna(0)
+            
+            tong_loai_sp = len(df_sp)
+            tong_so_luong = int(df_sp['so_luong'].sum())
+            tong_gia_tri = int((df_sp['so_luong'] * df_sp['gia_ban']).sum())
+        else:
+            tong_loai_sp = 0
+            tong_so_luong = 0
+            tong_gia_tri = 0
+            
+        col_m1, col_m2, col_m3 = st.columns(3)
+        col_m1.metric("📦 Tổng Số Mẫu Sản Phẩm", f"{tong_loai_sp} mã")
+        # Format số hàng ngàn bằng dấu chấm (VD: 1.000.000)
+        col_m2.metric("🛒 Tổng Số Lượng Tồn", f"{tong_so_luong:,}".replace(",", "."))
+        col_m3.metric("💰 Tổng Giá Trị Kho", f"{tong_gia_tri:,}".replace(",", ".") + " VNĐ")
+        
+        st.divider()
+        
         danh_sach_ma_sp = df_sp['ma_sp'].astype(str).tolist() if not df_sp.empty else []
 
         # --- KHU VỰC 1: THÊM SẢN PHẨM MỚI ---
@@ -132,15 +156,12 @@ else:
         st.divider()
 
         # --- KHU VỰC 2: THANH TÌM KIẾM & BẢNG TRẮNG ---
-        st.subheader("📊 Dữ Liệu Tổng")
+        st.subheader("📊 Dữ Liệu Chi Tiết")
         
-        # TÍNH NĂNG MỚI: THANH TÌM KIẾM NGAY TRÊN BẢNG
         tu_khoa = st.text_input("🔍 Nhập Mã hoặc Tên sản phẩm để tìm kiếm nhanh:", placeholder="VD: SP001 hoặc Bàn phím...")
         
         if not df_sp.empty:
-            # Lọc dữ liệu nếu có từ khóa
             if tu_khoa:
-                # Tìm trong cột Mã SP hoặc Tên SP (Không phân biệt hoa/thường)
                 df_sp = df_sp[
                     df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False, na=False) |
                     df_sp['ten_sp'].astype(str).str.contains(tu_khoa, case=False, na=False)
