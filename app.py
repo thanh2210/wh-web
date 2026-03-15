@@ -271,7 +271,7 @@ else:
                         if ton_moi < 0: st.error("Không đủ hàng trong kho!")
                         else:
                             # Cập nhật Google Sheets
-                            cell = ws_sp.find(str(sp['ma_sp']), in_column=1)
+                            cell = ws_sanpham.find(str(sp['ma_sp']), in_column=1)
                             ws_sp.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
                             ws_sp.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
                             
