@@ -207,7 +207,7 @@ else:
                             elif str(ma_sp) in danh_sach_ma: st.error("Mã SP đã tồn tại!")
                             else:
                                 tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['nguoi_thuc_hien'], tg])
+                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], tg])
                                 tai_du_lieu_tu_google.clear()
                                 ghi_log(user['ten_that'], "Thêm SP", f"Thêm {sl} cái {ten_sp} ({ma_sp})")
                                 st.session_state.thong_bao = "✅ Đã thêm thành công!"
