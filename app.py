@@ -3,21 +3,24 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 import json
-from datetime import datetime
+from datetime import datetime, timedelta # Đã thêm timedelta
 from io import BytesIO
 import altair as alt
 import math
-import hashlib # Thư viện mã hóa mật khẩu
+import hashlib
+import time # Đã thêm thư viện time để chống spam API
 
 st.set_page_config(page_title="Hệ Thống Quản Lý ERP", page_icon="📦", layout="wide")
 
 DANH_MUC_SP = ["Điện tử", "Gia dụng", "Thời trang", "Thực phẩm", "Văn phòng phẩm", "Khác"]
 
-# --- HÀM MÃ HÓA MẬT KHẨU SHA-256 ---
+# --- HÀM XỬ LÝ MÚI GIỜ VIỆT NAM (UTC+7) ---
+def get_vn_time(format_str="%Y-%m-%d %H:%M:%S"):
+    return (datetime.utcnow() + timedelta(hours=7)).strftime(format_str)
+
 def ma_hoa_mat_khau(mat_khau_goc):
     return hashlib.sha256(str(mat_khau_goc).encode('utf-8')).hexdigest()
 
-# --- 1. KẾT NỐI DATABASE (CACHE KẾT NỐI 10 PHÚT) ---
 @st.cache_resource(ttl=600)
 def ket_noi_gsheets():
     creds_dict = json.loads(st.secrets["google_credentials"])
@@ -36,30 +39,24 @@ except Exception as e:
     st.error(f"❌ Lỗi kết nối CSDL. Vui lòng kiểm tra lại Link hoặc Quyền chia sẻ.")
     st.stop()
 
-# --- 2. BỘ NHỚ ĐỆM DỮ LIỆU (CHỐNG SẬP API QUOTA) ---
-# Cache dữ liệu trong 60 giây. Nếu không có ai sửa gì, web sẽ lấy từ RAM cực nhanh.
 @st.cache_data(ttl=60)
 def tai_du_lieu_tu_google():
     return ws_nhansu.get_all_records(), ws_sanpham.get_all_records(), ws_lichsu.get_all_records()
 
-# Tải dữ liệu vào biến
 data_nhansu, data_sanpham, data_lichsu = tai_du_lieu_tu_google()
 
-# TỰ ĐỘNG TẠO TÀI KHOẢN ADMIN NẾU FILE DATABASE TRỐNG
 if not data_nhansu:
     try:
         ws_nhansu.append_row(['admin', ma_hoa_mat_khau('admin123'), 'Quản Trị Viên', 'admin', 'Them, Sua, Xoa, Xuat', 'HoatDong'])
-        tai_du_lieu_tu_google.clear() # Xóa cache để cập nhật ngay
+        tai_du_lieu_tu_google.clear()
         st.rerun()
     except:
-        st.error("Lỗi khởi tạo tài khoản Admin đầu tiên. Vui lòng kiểm tra lại file DB_NhanSu.")
+        st.error("Lỗi khởi tạo tài khoản Admin đầu tiên.")
 
-# --- HÀM GHI LOG ---
 def ghi_log(nguoi_dung, hanh_dong, chi_tiet):
-    tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
-        ws_lichsu.append_row([tg, str(nguoi_dung), str(hanh_dong), str(chi_tiet)])
-        tai_du_lieu_tu_google.clear() # Báo cho hệ thống biết Lịch sử vừa có thay đổi
+        ws_lichsu.append_row([get_vn_time(), str(nguoi_dung), str(hanh_dong), str(chi_tiet)])
+        tai_du_lieu_tu_google.clear() 
     except:
         pass 
 
@@ -73,6 +70,7 @@ def kiem_tra_quyen(user, quyen_can_check):
 # ================= GIAO DIỆN ĐĂNG NHẬP =================
 if st.session_state.nguoi_dung is None:
     st.title("🔒 Đăng Nhập Hệ Thống")
+    st.caption("Tài khoản mặc định: admin | Mật khẩu: admin123")
     with st.form("dang_nhap"):
         tk_nhap = st.text_input("Tên đăng nhập:")
         mk_nhap = st.text_input("Mật khẩu:", type="password")
@@ -114,7 +112,7 @@ else:
                 mk_moi = st.text_input("Mật khẩu mới:", type="password")
                 if st.form_submit_button("Cập Nhật"):
                     if ma_hoa_mat_khau(mk_cu) != str(user['mat_khau']) or len(mk_moi) < 4:
-                        st.error("Sai MK cũ hoặc MK mới quá ngắn (tối thiểu 4 ký tự)!")
+                        st.error("Sai MK cũ hoặc MK mới quá ngắn!")
                     else:
                         cell_tk = ws_nhansu.find(str(user['tai_khoan']), in_column=1)
                         if cell_tk:
@@ -161,16 +159,16 @@ else:
                             st.rerun()
         
         with col_ns2:
-            st.subheader("🚫 Quản Lý Trạng Thái (Khóa/Reset)")
+            st.subheader("🚫 Quản Lý Trạng Thái")
             danh_sach_nv = [str(u['tai_khoan']) for u in data_nhansu if str(u['vai_tro']) != 'admin']
             if danh_sach_nv:
                 with st.form("form_khoa_tk"):
                     tk_thao_tac = st.selectbox("Chọn tài khoản:", danh_sach_nv)
-                    hanh_dong = st.radio("Hành động:", ["Mở Khóa (HoatDong)", "Đình Chỉ (DaKhoa)", "Reset Mật Khẩu (1234)"])
+                    hanh_dong = st.radio("Hành động:", ["Mở Khóa", "Đình Chỉ", "Reset Mật Khẩu (1234)"])
                     if st.form_submit_button("Thực Thi"):
                         cell_tk = ws_nhansu.find(tk_thao_tac, in_column=1)
                         if cell_tk:
-                            if hanh_dong == "Reset Mật Khẩu (1234)":
+                            if "Reset" in hanh_dong:
                                 ws_nhansu.update(values=[[ma_hoa_mat_khau("1234")]], range_name=f"B{cell_tk.row}")
                                 log_msg = f"Reset mật khẩu về 1234 cho: {tk_thao_tac}"
                             else:
@@ -186,7 +184,7 @@ else:
         st.subheader("📋 Danh sách nhân sự hiện tại")
         df_nhansu = pd.DataFrame(data_nhansu)
         if not df_nhansu.empty:
-            df_nhansu['mat_khau'] = "🔒 Đã mã hóa" # Hiển thị an toàn tuyệt đối
+            df_nhansu['mat_khau'] = "🔒 Đã mã hóa" 
             st.dataframe(df_nhansu, use_container_width=True)
 
     # ================= 2. LỊCH SỬ HOẠT ĐỘNG =================
@@ -214,7 +212,7 @@ else:
                     st.session_state.trang_lich_su -= 1
                     st.rerun()
             with col_btn2:
-                st.markdown(f"<div style='text-align: center; margin-top: 8px;'><b>Trang {st.session_state.trang_lich_su} / {tong_so_trang}</b> (Tổng số: {tong_so_dong} bản ghi)</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='text-align: center; margin-top: 8px;'><b>Trang {st.session_state.trang_lich_su} / {tong_so_trang}</b></div>", unsafe_allow_html=True)
             with col_btn3:
                 if st.button("Trang Tiếp ➡️", use_container_width=True, disabled=(st.session_state.trang_lich_su == tong_so_trang)):
                     st.session_state.trang_lich_su += 1
@@ -238,7 +236,7 @@ else:
         df_sp = pd.DataFrame(data_sanpham)
         
         if not df_sp.empty:
-            df_sp['ma_sp'] = df_sp['ma_sp'].astype(str) # Ép kiểu chuỗi để tránh lỗi tìm kiếm
+            df_sp['ma_sp'] = df_sp['ma_sp'].astype(str) 
             df_sp['so_luong'] = pd.to_numeric(df_sp.get('so_luong', 0), errors='coerce').fillna(0)
             df_sp['gia_ban'] = pd.to_numeric(df_sp.get('gia_ban', 0), errors='coerce').fillna(0)
             df_sp['Cảnh Báo'] = df_sp['so_luong'].apply(lambda x: "🔴 Sắp hết" if x < 5 else "🟢 Đủ hàng")
@@ -250,17 +248,6 @@ else:
             col_m1.metric("📦 Tổng Số Mẫu SP", f"{len(df_sp)} mã")
             col_m2.metric("🛒 Tổng Hàng Tồn", f"{int(df_sp['so_luong'].sum()):,}".replace(",", "."))
             col_m3.metric("💰 Tổng Vốn Kho", f"{int((df_sp['so_luong'] * df_sp['gia_ban']).sum()):,}".replace(",", ".") + " đ")
-            
-            with st.expander("📊 Bấm để xem Biểu đồ Tỷ trọng"):
-                df_chart = df_sp.groupby('danh_muc')['so_luong'].sum().reset_index()
-                pie_chart = alt.Chart(df_chart).mark_arc(innerRadius=40).encode(
-                    theta=alt.Theta(field="so_luong", type="quantitative"),
-                    color=alt.Color(field="danh_muc", type="nominal"),
-                    tooltip=["danh_muc", "so_luong"]
-                ).properties(height=250, title="Tỷ trọng hàng theo Danh mục")
-                st.altair_chart(pie_chart, use_container_width=True)
-        else:
-            st.info("Kho hàng trống.")
         
         st.divider()
 
@@ -281,8 +268,7 @@ else:
                             if not ma_sp or not ten_sp: st.error("Thiếu mã/tên!")
                             elif str(ma_sp) in danh_sach_ma: st.error("Mã SP đã tồn tại!")
                             else:
-                                tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], tg])
+                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], get_vn_time()])
                                 tai_du_lieu_tu_google.clear()
                                 ghi_log(user['ten_that'], "Thêm SP", f"Thêm {sl} cái {ten_sp} ({ma_sp})")
                                 st.session_state.thong_bao = "✅ Đã thêm thành công!"
@@ -296,12 +282,11 @@ else:
                         try:
                             df_import = pd.read_excel(uploaded_file).fillna("")
                             du_lieu_day_len = []
-                            tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             danh_sach_ma = df_sp['ma_sp'].tolist() if not df_sp.empty else []
                             
                             for _, row in df_import.iterrows():
                                 if str(row['ma_sp']) not in danh_sach_ma:
-                                    du_lieu_day_len.append([str(row['ma_sp']), str(row['ten_sp']), str(row.get('danh_muc', 'Khác')), int(row['so_luong']), int(row['gia_ban']), str(row['ghi_chu']), user['ten_that'], tg])
+                                    du_lieu_day_len.append([str(row['ma_sp']), str(row['ten_sp']), str(row.get('danh_muc', 'Khác')), int(row['so_luong']), int(row['gia_ban']), str(row['ghi_chu']), user['ten_that'], get_vn_time()])
                                     
                             if du_lieu_day_len:
                                 ws_sanpham.append_rows(du_lieu_day_len)
@@ -351,7 +336,7 @@ else:
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         df_xuat.to_excel(writer, index=False)
-                    st.download_button("📥 Tải Dữ Liệu Đã Chọn", data=output.getvalue(), file_name=f"Kho_{datetime.now().strftime('%d%m%y_%H%M')}.xlsx")
+                    st.download_button("📥 Tải Dữ Liệu Đã Chọn", data=output.getvalue(), file_name=f"Kho_{get_vn_time('%d%m%y_%H%M')}.xlsx")
                 
                 # FORM SỬA SP
                 if kiem_tra_quyen(user, 'Sua') and sl_chon == 1:
@@ -373,8 +358,7 @@ else:
                             try:
                                 cell = ws_sanpham.find(str(sp_dang_sua['ma_sp']), in_column=1)
                                 if cell:
-                                    tg_sua = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                    ws_sanpham.update(values=[[str(sp_dang_sua['ma_sp']), t_moi, dm_moi, sl_moi, gia_moi, gc_moi, f"{user['ten_that']} (Sửa)", tg_sua]], range_name=f"A{cell.row}:H{cell.row}")
+                                    ws_sanpham.update(values=[[str(sp_dang_sua['ma_sp']), t_moi, dm_moi, sl_moi, gia_moi, gc_moi, f"{user['ten_that']} (Sửa)", get_vn_time()]], range_name=f"A{cell.row}:H{cell.row}")
                                     tai_du_lieu_tu_google.clear()
                                     ghi_log(user['ten_that'], "Sửa SP", f"Cập nhật mã {sp_dang_sua['ma_sp']}")
                                     st.session_state.thong_bao = "✅ Đã lưu cập nhật!"
@@ -384,7 +368,7 @@ else:
                             except Exception as e:
                                 st.error(f"Lỗi khi lưu: {e}")
                 
-                # NÚT XÓA SP
+                # NÚT XÓA SP (CÓ CHỐNG SPAM API)
                 if kiem_tra_quyen(user, 'Xoa'):
                     if st.button(f"🗑️ XÓA {sl_chon} SẢN PHẨM", type="primary"):
                         ma_xoa = danh_sach_chon['ma_sp'].astype(str).tolist()
@@ -397,6 +381,7 @@ else:
                             
                         for r in sorted(rows_del, reverse=True): 
                             ws_sanpham.delete_rows(r)
+                            time.sleep(0.5) # NGHỈ 0.5 GIÂY ĐỂ CHỐNG GOOGLE KHÓA API
                             
                         tai_du_lieu_tu_google.clear()
                         ghi_log(user['ten_that'], "Xóa SP", f"Xóa mã: {', '.join(ma_xoa)}")
