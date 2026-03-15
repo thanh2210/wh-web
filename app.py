@@ -272,8 +272,8 @@ else:
                         else:
                             # Cập nhật Google Sheets
                             cell = ws_sanpham.find(str(sp['ma_sp']), in_column=1)
-                            ws_sp.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
-                            ws_sp.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
+                            ws_sanpham.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
+                            ws_sanpham.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
                             
                             log(loai.upper(), f"{qty} {sp['ma_sp']} - Lý do: {note}")
                             
@@ -287,7 +287,7 @@ else:
                 if st.button("🗑️ Xóa hàng loạt mã đã chọn"):
                     for m in selected['ma_sp'].tolist():
                         r = ws_sp.find(str(m), in_column=1)
-                        ws_sp.delete_rows(r.row)
+                        ws_sanpham.delete_rows(r.row)
                         time.sleep(0.4)
                     log("Xóa", f"Xóa {len(selected)} mã hàng")
                     st.rerun()
