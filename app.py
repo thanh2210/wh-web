@@ -274,7 +274,7 @@ else:
                             ws_sanpham.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
                             
                             # Tạo PDF
-                            pdf_bin = xuat_pdf_binary(user['ten_that'], sp['ma_sp'], sp['ten_sp'], so_luong, ton_moi, ghi_chu)
+                            pdf_bin = xuat_pdf_binary(user['ten_that'], sp['ma_sp'], sp['ten_sp'], sp['so_luong'], ton_moi)
                             st.success(f"Đã cập nhật tồn kho: {ton_moi}")
                             st.download_button("📥 TẢI PHIẾU PDF", data=pdf_bin, file_name=f"Phieu_{sp['ma_sp']}.pdf", mime="application/pdf")
                             if st.button("Làm mới bảng"): st.rerun()
