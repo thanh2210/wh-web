@@ -163,8 +163,6 @@ else:
             df_sp['so_luong'] = pd.to_numeric(df_sp.get('so_luong', 0), errors='coerce').fillna(0)
             df_sp['gia_ban'] = pd.to_numeric(df_sp.get('gia_ban', 0), errors='coerce').fillna(0)
             
-            # TÍNH NĂNG CẢNH BÁO TỒN KHO THẤP
-            df_sp['Cảnh Báo'] = df_sp['so_luong'].apply(lambda x: "🔴 Sắp hết" if x < 5 else "🟢 Đủ hàng")
 
         # --- DASHBOARD & BIỂU ĐỒ ---
         st.subheader("📈 Phân Tích Tổng Quan")
