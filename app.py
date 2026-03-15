@@ -247,43 +247,53 @@ else:
             # Cảnh báo tồn thấp
             df_sp['Tình trạng'] = df_sp['so_luong'].apply(lambda x: "🔴 Hết hàng" if x <= 0 else ("🟡 Sắp hết" if x < 10 else "🟢 Ổn định"))
             
-            df_sp.insert(0, "Chọn", False)
-            edited = st.data_editor(df_sp, hide_index=True, use_container_width=True, disabled=df_sp.columns.drop("Chọn"))
-            
-            selected = edited[edited["Chọn"] == True]
-            if len(selected) == 1:
-                sp = selected.iloc[0]
-                with st.container(border=True):
-                    st.subheader(f"📑 Lập Phiếu: {sp['ten_sp']}")
-                    cp1, cp2, cp3 = st.columns([1, 1, 2])
-                    loai = cp1.selectbox("Loại giao dịch", ["Nhập kho (+)", "Xuất kho (-)"])
-                    qty = cp2.number_input("Số lượng", min_value=1)
-                    note = cp3.text_input("Ghi chú / Khách hàng")
-                    
-                    if st.button("🚀 XÁC NHẬN & IN PHIẾU", type="primary"):
-                        ton_cu = int(sp['so_luong'])
-                        ton_moi = ton_cu + qty if "Nhập" in loai else ton_cu - qty
-                        
-                        if ton_moi < 0: st.error("Không đủ hàng trong kho!")
-                        else:
-                            # Cập nhật Google Sheets
-                            cell = ws_sp.find(str(sp['ma_sp']), in_column=1)
-                            ws_sp.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
-                            ws_sp.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
+            # FORM SỬA SP
+                if kiem_tra_quyen(user, 'Sua') and sl_chon == 1:
+                    st.subheader("✏️ Chỉnh Sửa Sản Phẩm")
+                    sp_dang_sua = danh_sach_chon.iloc[0]
+                    with st.form("form_sua"):
+                        col_s1, col_s2, col_s3 = st.columns(3)
+                        with col_s1:
+                            st.text_input("Mã SP (Cố định)", value=str(sp_dang_sua['ma_sp']), disabled=True)
+                            t_moi = st.text_input("Tên", value=str(sp_dang_sua['ten_sp']))
+                        with col_s2:
+                            dm_moi = st.selectbox("Danh mục", DANH_MUC_SP, index=DANH_MUC_SP.index(sp_dang_sua['danh_muc']) if sp_dang_sua['danh_muc'] in DANH_MUC_SP else 0)
+                            sl_moi = st.number_input("SL", value=int(sp_dang_sua['so_luong']))
+                        with col_s3:
+                            gia_moi = st.number_input("Giá", value=int(sp_dang_sua['gia_ban']))
+                            gc_moi = st.text_input("Ghi chú", value=str(sp_dang_sua['ghi_chu']))
                             
-                            log(loai.upper(), f"{qty} {sp['ma_sp']} - Lý do: {note}")
+                        if st.form_submit_button("Lưu Cập Nhật"):
+                            try:
+                                cell = ws_sanpham.find(str(sp_dang_sua['ma_sp']), in_column=1)
+                                if cell:
+                                    tg_sua = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    ws_sanpham.update(values=[[str(sp_dang_sua['ma_sp']), t_moi, dm_moi, sl_moi, gia_moi, gc_moi, f"{user['ten_that']} (Sửa)", tg_sua]], range_name=f"A{cell.row}:H{cell.row}")
+                                    tai_du_lieu_tu_google.clear()
+                                    ghi_log(user['ten_that'], "Sửa SP", f"Cập nhật mã {sp_dang_sua['ma_sp']}")
+                                    st.session_state.thong_bao = "✅ Đã lưu cập nhật!"
+                                    st.rerun()
+                                else:
+                                    st.error("Lỗi: Mã sản phẩm này đã bị ai đó xóa mất trước đó!")
+                            except Exception as e:
+                                st.error(f"Lỗi khi lưu: {e}")
+                
+                # NÚT XÓA SP
+                if kiem_tra_quyen(user, 'Xoa'):
+                    if st.button(f"🗑️ XÓA {sl_chon} SẢN PHẨM", type="primary"):
+                        ma_xoa = danh_sach_chon['ma_sp'].astype(str).tolist()
+                        rows_del = []
+                        for m in ma_xoa:
+                            try:
+                                cell = ws_sanpham.find(m, in_column=1)
+                                if cell: rows_del.append(cell.row)
+                            except: pass
                             
-                            # Tạo PDF
-                            pdf_bin = xuat_pdf_binary(loai, user['ten_that'], sp['ma_sp'], sp['ten_sp'], qty, ton_moi, note)
-                            st.success(f"Đã cập nhật tồn kho: {ton_moi}")
-                            st.download_button("📥 TẢI PHIẾU PDF", data=pdf_bin, file_name=f"Phieu_{sp['ma_sp']}.pdf", mime="application/pdf")
-                            if st.button("Làm mới bảng"): st.rerun()
+                        for r in sorted(rows_del, reverse=True): 
+                            ws_sanpham.delete_rows(r)
+                            
+                        tai_du_lieu_tu_google.clear()
+                        ghi_log(user['ten_that'], "Xóa SP", f"Xóa mã: {', '.join(ma_xoa)}")
+                        st.session_state.thong_bao = f"🗑️ Đã xóa {len(rows_del)} SP an toàn!"
+                        st.rerun()
 
-            elif len(selected) > 1 and user['vai_tro'] == 'admin':
-                if st.button("🗑️ Xóa hàng loạt mã đã chọn"):
-                    for m in selected['ma_sp'].tolist():
-                        r = ws_sp.find(str(m), in_column=1)
-                        ws_sp.delete_rows(r.row)
-                        time.sleep(0.4)
-                    log("Xóa", f"Xóa {len(selected)} mã hàng")
-                    st.rerun()
