@@ -5,29 +5,39 @@ from google.oauth2.service_account import Credentials
 import json
 from datetime import datetime
 from io import BytesIO
-import altair as alt # Thư viện vẽ biểu đồ có sẵn của Streamlit
+import altair as alt
 
 st.set_page_config(page_title="Hệ Thống Quản Lý ERP", page_icon="📦", layout="wide")
 
 # --- DANH MỤC SẢN PHẨM MẶC ĐỊNH ---
 DANH_MUC_SP = ["Điện tử", "Gia dụng", "Thời trang", "Thực phẩm", "Văn phòng phẩm", "Khác"]
 
-# --- KẾT NỐI GOOGLE SHEETS ---
+# --- KẾT NỐI GOOGLE SHEETS PHÂN TÁN (CẬP NHẬT MỚI) ---
 @st.cache_resource(ttl=600)
 def ket_noi_gsheets():
+    # 1. Khởi tạo xác thực
     creds_dict = json.loads(st.secrets["google_credentials"])
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     client = gspread.authorize(creds)
-    sheet = client.open_by_url(st.secrets["google_sheet_url"])
-    # KẾT NỐI THÊM TAB LỊCH SỬ
-    return sheet.worksheet("NhanSu"), sheet.worksheet("SanPham"), sheet.worksheet("LichSu")
+    
+    # 2. Gọi API mở 3 file riêng biệt (Lấy Sheet đầu tiên của mỗi file)
+    sheet_ns = client.open_by_url(st.secrets["url_nhansu"]).sheet1
+    sheet_sp = client.open_by_url(st.secrets["url_sanpham"]).sheet1
+    sheet_ls = client.open_by_url(st.secrets["url_lichsu"]).sheet1
+    
+    return sheet_ns, sheet_sp, sheet_ls
 
 try:
     ws_nhansu, ws_sanpham, ws_lichsu = ket_noi_gsheets()
 except Exception as e:
-    st.error("❌ Lỗi kết nối Google Sheets. Vui lòng kiểm tra lại cấu hình.")
+    st.error(f"❌ Lỗi kết nối CSDL. Vui lòng kiểm tra lại Link hoặc Quyền chia sẻ. Chi tiết: {e}")
     st.stop()
+
+# =====================================================================
+# TỪ ĐÂY TRỞ XUỐNG BẠN GIỮ NGUYÊN TOÀN BỘ CODE CŨ (Không cần sửa gì cả)
+# (Bao gồm hàm ghi_log, giao diện đăng nhập, giao diện chính...)
+# =====================================================================
 
 # --- HÀM GHI NHẬT KÝ LỊCH SỬ (AUDIT TRAIL) ---
 def ghi_log(nguoi_dung, hanh_dong, chi_tiet):
