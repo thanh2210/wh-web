@@ -126,12 +126,14 @@ else:
             df_sp['so_luong'] = pd.to_numeric(df_sp['so_luong']).fillna(0)
             df_sp['gia_ban'] = pd.to_numeric(df_sp['gia_ban']).fillna(0)
             
-            # Dashboard
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Tổng mã hàng", len(df_sp))
-            c2.metric("Tồn kho tổng", int(df_sp['so_luong'].sum()))
-            c3.metric("Giá trị kho", f"{int((df_sp['so_luong']*df_sp['gia_ban']).sum()):,}".replace(",", "."))
-
+            # --- DASHBOARD ---
+        st.subheader("📈 Phân Tích Tổng Quan")
+        col_m1, col_m2, col_m3 = st.columns(3)
+        if not df_sp.empty:
+            col_m1.metric("📦 Tổng Số Mẫu SP", f"{len(df_sp)} mã")
+            col_m2.metric("🛒 Tổng Hàng Tồn", f"{int(df_sp['so_luong'].sum()):,}".replace(",", "."))
+            col_m3.metric("💰 Tổng Vốn Kho", f"{int((df_sp['so_luong'] * df_sp['gia_ban']).sum()):,}".replace(",", ".") + " đ")
+        
         st.divider()
 
        # --- THÊM SP & IMPORT EXCEL ---
