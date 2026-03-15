@@ -50,7 +50,7 @@ if not data_nhansu:
 
 def ghi_log(nguoi_dung, hanh_dong, chi_tiet):
     try:
-        ws_lichsu.append_row([get_vn_time(), str(nguoi_dung), str(hanh_dong), str(chi_tiet)])
+        ws_lichsu.append_row([get_vn_time(), str(nguoi_thao_tac), str(hanh_dong), str(chi_tiet)])
         tai_du_lieu_tu_google.clear() 
     except: pass 
 
