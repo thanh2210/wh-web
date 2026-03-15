@@ -244,10 +244,6 @@ else:
         if not df_sp.empty:
             if tu_khoa: df_sp = df_sp[df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False) | df_sp['ten_sp'].str.contains(tu_khoa, case=False)]
             
-            tu_khoa = st.text_input("🔍 Tìm nhanh mã hoặc tên...")
-        if not df_sp.empty:
-            if tu_khoa: df_sp = df_sp[df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False) | df_sp['ten_sp'].str.contains(tu_khoa, case=False)]
-            
             # Cảnh báo tồn thấp
             df_sp['Tình trạng'] = df_sp['so_luong'].apply(lambda x: "🔴 Hết hàng" if x <= 0 else ("🟡 Sắp hết" if x < 10 else "🟢 Ổn định"))
             
