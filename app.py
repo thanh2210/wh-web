@@ -34,11 +34,6 @@ except Exception as e:
     st.error(f"❌ Lỗi kết nối CSDL. Vui lòng kiểm tra lại Link hoặc Quyền chia sẻ. Chi tiết: {e}")
     st.stop()
 
-# =====================================================================
-# TỪ ĐÂY TRỞ XUỐNG BẠN GIỮ NGUYÊN TOÀN BỘ CODE CŨ (Không cần sửa gì cả)
-# (Bao gồm hàm ghi_log, giao diện đăng nhập, giao diện chính...)
-# =====================================================================
-
 
 # --- HÀM GHI NHẬT KÝ LỊCH SỬ (AUDIT TRAIL) ---
 def ghi_log(nguoi_dung, hanh_dong, chi_tiet):
