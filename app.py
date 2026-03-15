@@ -206,8 +206,7 @@ else:
                             if not ma_sp or not ten_sp: st.error("Thiếu mã/tên!")
                             elif str(ma_sp) in danh_sach_ma: st.error("Mã SP đã tồn tại!")
                             else:
-                                tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], tg])
+                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], get_vn_time()])
                                 tai_du_lieu_tu_google.clear()
                                 ghi_log(user['ten_that'], "Thêm SP", f"Thêm {sl} cái {ten_sp} ({ma_sp})")
                                 st.session_state.thong_bao = "✅ Đã thêm thành công!"
@@ -221,12 +220,11 @@ else:
                         try:
                             df_import = pd.read_excel(uploaded_file).fillna("")
                             du_lieu_day_len = []
-                            tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                             danh_sach_ma = df_sp['ma_sp'].tolist() if not df_sp.empty else []
                             
                             for _, row in df_import.iterrows():
                                 if str(row['ma_sp']) not in danh_sach_ma:
-                                    du_lieu_day_len.append([str(row['ma_sp']), str(row['ten_sp']), str(row.get('danh_muc', 'Khác')), int(row['so_luong']), int(row['gia_ban']), str(row['ghi_chu']), user['ten_that'], tg])
+                                    du_lieu_day_len.append([str(row['ma_sp']), str(row['ten_sp']), str(row.get('danh_muc', 'Khác')), int(row['so_luong']), int(row['gia_ban']), str(row['ghi_chu']), user['ten_that'], get_vn_time()])
                                     
                             if du_lieu_day_len:
                                 ws_sanpham.append_rows(du_lieu_day_len)
