@@ -270,8 +270,6 @@ else:
                             cell = ws_sanpham.find(str(sp['ma_sp']), in_column=1)
                             ws_sanpham.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
                             ws_sanpham.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
-
-                            ghi_log(loai.upper(), f"{qty} {sp['ma_sp']} - Lý do: {note}")
                             
                             # Tạo PDF
                             pdf_bin = xuat_pdf_binary(loai, user['ten_that'], sp['ma_sp'], sp['ten_sp'], qty, ton_moi, note)
