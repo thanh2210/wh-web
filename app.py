@@ -7,8 +7,7 @@ from datetime import datetime, timedelta # Đã thêm timedelta
 from io import BytesIO
 import altair as alt
 import math
-import hashlib
-import time # Đã thêm thư viện time để chống spam API
+import time
 
 st.set_page_config(page_title="Hệ Thống Quản Lý ERP", page_icon="📦", layout="wide")
 
@@ -67,18 +66,16 @@ def kiem_tra_quyen(user, quyen_can_check):
     if user['vai_tro'] == 'admin': return True
     return quyen_can_check in str(user.get('quyen', '')).split(', ')
 
-# ================= GIAO DIỆN ĐĂNG NHẬP =================
+# --- GIAO DIỆN ĐĂNG NHẬP ---
 if st.session_state.nguoi_dung is None:
     st.title("🔒 Đăng Nhập Hệ Thống")
-    st.caption("Tài khoản mặc định: admin | Mật khẩu: admin123")
     with st.form("dang_nhap"):
         tk_nhap = st.text_input("Tên đăng nhập:")
         mk_nhap = st.text_input("Mật khẩu:", type="password")
         if st.form_submit_button("Đăng Nhập"):
-            mk_da_ma_hoa = ma_hoa_mat_khau(mk_nhap)
-            user_data = next((user for user in data_nhansu if str(user['tai_khoan']) == tk_nhap and str(user['mat_khau']) == mk_da_ma_hoa), None)
-            
+            user_data = next((user for user in data_nhansu if str(user['tai_khoan']) == tk_nhap and str(user['mat_khau']) == mk_nhap), None)
             if user_data:
+                # KIỂM TRA TÀI KHOẢN CÓ BỊ KHÓA KHÔNG
                 if str(user_data.get('trang_thai', 'HoatDong')) == 'DaKhoa':
                     st.error("❌ Tài khoản của bạn đã bị khóa! Vui lòng liên hệ Admin.")
                 else:
