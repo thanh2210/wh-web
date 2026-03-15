@@ -134,24 +134,55 @@ else:
 
         st.divider()
 
-        # Tabs cho Thêm mới và Nhập/Xuất hàng loạt
-        t1, t2 = st.tabs(["➕ Thêm Mã Hàng Mới", "📤 Nhập/Xuất Hàng Loạt (Excel)"])
-        
-        with t1:
-            if kiem_tra_quyen(user, 'Them'):
-                with st.form("them_moi"):
-                    c_a, c_b, c_c = st.columns(3)
-                    m = c_a.text_input("Mã SP")
-                    t = c_b.text_input("Tên SP")
-                    dm = c_c.selectbox("Danh mục", DANH_MUC_SP)
-                    sl_bd = c_a.number_input("Tồn đầu kỳ", min_value=0)
-                    g = c_b.number_input("Giá bán", min_value=0)
-                    gc = c_c.text_input("Ghi chú")
-                    if st.form_submit_button("Khai báo sản phẩm"):
-                        ws_sanpham.append_row([m, t, dm, sl_bd, g, gc, user['ten_that'], get_vn_time()])
-                        ghi_log(user['ten_that'], "Khai báo mới", f"Mã {m} - Tồn đầu: {sl_bd}")
-                        tai_du_lieu_tu_google.clear()
-                        st.rerun()
+       # --- THÊM SP & IMPORT EXCEL ---
+        if kiem_tra_quyen(user, 'Them'):
+            col_add1, col_add2 = st.columns(2)
+            with col_add1:
+                with st.expander("➕ Nhập Thủ Công", expanded=False):
+                    with st.form("form_nhap"):
+                        ma_sp = st.text_input("Mã SP (*)")
+                        ten_sp = st.text_input("Tên SP (*)")
+                        danh_muc = st.selectbox("Danh mục", DANH_MUC_SP)
+                        sl = st.number_input("Số lượng", min_value=0, step=1)
+                        gia = st.number_input("Giá bán", min_value=0, step=1000)
+                        ghi_chu = st.text_input("Ghi chú")
+                        if st.form_submit_button("Lưu Sản Phẩm"):
+                            danh_sach_ma = df_sp['ma_sp'].tolist() if not df_sp.empty else []
+                            if not ma_sp or not ten_sp: st.error("Thiếu mã/tên!")
+                            elif str(ma_sp) in danh_sach_ma: st.error("Mã SP đã tồn tại!")
+                            else:
+                                tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], tg])
+                                tai_du_lieu_tu_google.clear()
+                                ghi_log(user['ten_that'], "Thêm SP", f"Thêm {sl} cái {ten_sp} ({ma_sp})")
+                                st.session_state.thong_bao = "✅ Đã thêm thành công!"
+                                st.rerun()
+            
+            with col_add2:
+                with st.expander("📥 Import Bằng File Excel", expanded=False):
+                    st.caption("Cột bắt buộc: ma_sp, ten_sp, danh_muc, so_luong, gia_ban, ghi_chu")
+                    uploaded_file = st.file_uploader("Kéo thả file .xlsx", type=['xlsx'])
+                    if uploaded_file and st.button("Bắt đầu Import"):
+                        try:
+                            df_import = pd.read_excel(uploaded_file).fillna("")
+                            du_lieu_day_len = []
+                            tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            danh_sach_ma = df_sp['ma_sp'].tolist() if not df_sp.empty else []
+                            
+                            for _, row in df_import.iterrows():
+                                if str(row['ma_sp']) not in danh_sach_ma:
+                                    du_lieu_day_len.append([str(row['ma_sp']), str(row['ten_sp']), str(row.get('danh_muc', 'Khác')), int(row['so_luong']), int(row['gia_ban']), str(row['ghi_chu']), user['ten_that'], tg])
+                                    
+                            if du_lieu_day_len:
+                                ws_sanpham.append_rows(du_lieu_day_len)
+                                tai_du_lieu_tu_google.clear()
+                                ghi_log(user['ten_that'], "Import Excel", f"Nhập hàng loạt {len(du_lieu_day_len)} SP")
+                                st.session_state.thong_bao = f"✅ Đã import {len(du_lieu_day_len)} sản phẩm!"
+                                st.rerun()
+                            else:
+                                st.warning("Mọi mã trong file đều đã tồn tại hoặc file trống.")
+                        except Exception as e:
+                            st.error(f"Lỗi đọc file Excel. Chi tiết: {e}")
 
         st.divider()
 
