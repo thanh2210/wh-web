@@ -32,7 +32,7 @@ class PDF_Phieu(FPDF):
         self.line(10, 28, 200, 28)
         self.ln(10)
 
-def xuat_pdf_binary(loai, nguoi, ma, ten, sl, ton, ly_do):
+def xuat_pdf_binary(nguoi_nhap, ma_sp, ten_sp, so_luong):
     pdf = PDF_Phieu()
     pdf.add_page()
     pdf.set_font('Helvetica', 'B', 20)
@@ -40,13 +40,11 @@ def xuat_pdf_binary(loai, nguoi, ma, ten, sl, ton, ly_do):
     
     pdf.set_font('Helvetica', '', 12)
     pdf.ln(5)
-    pdf.cell(0, 10, f'Nguoi thuc hien: {nguoi}', 0, 1)
-    pdf.cell(0, 10, f'Ma san pham: {ma}', 0, 1)
-    pdf.cell(0, 10, f'Ten san pham: {ten}', 0, 1)
-    pdf.cell(0, 10, f'So luong dieu chuyen: {sl}', 0, 1)
-    pdf.cell(0, 10, f'Ton kho hien tai: {ton}', 0, 1)
+    pdf.cell(0, 10, f'Nguoi thuc hien: {nguoi_nhap}', 0, 1)
+    pdf.cell(0, 10, f'Ma san pham: {ma_sp}', 0, 1)
+    pdf.cell(0, 10, f'Ten san pham: {ten_sp}', 0, 1)
+    pdf.cell(0, 10, f'So luong dieu chuyen: {so_luong}', 0, 1)
     pdf.ln(5)
-    pdf.multi_cell(0, 10, f'Ly do: {ly_do}')
     
     pdf.ln(20)
     pdf.cell(95, 10, 'CHU KHO', 0, 0, 'C')
@@ -209,7 +207,7 @@ else:
                             elif str(ma_sp) in danh_sach_ma: st.error("Mã SP đã tồn tại!")
                             else:
                                 tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, sl, gia, str(ghi_chu), user['ten_that'], tg])
+                                ws_sanpham.append_row([str(ma_sp), str(ten_sp), danh_muc, so_luong, gia_ban, str(ghi_chu), user['nguoi_nhap'], tg])
                                 tai_du_lieu_tu_google.clear()
                                 ghi_log(user['ten_that'], "Thêm SP", f"Thêm {sl} cái {ten_sp} ({ma_sp})")
                                 st.session_state.thong_bao = "✅ Đã thêm thành công!"
