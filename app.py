@@ -9,6 +9,7 @@ import altair as alt
 import math
 import hashlib
 import time
+from fpdf import FPDF
 
 st.set_page_config(page_title="Hệ Thống ERP - Quản Lý Phiếu Kho", page_icon="📦", layout="wide")
 
@@ -21,6 +22,39 @@ def get_vn_time(format_str="%Y-%m-%d %H:%M:%S"):
 def ma_hoa_mat_khau(mat_khau_goc):
     return hashlib.sha256(str(mat_khau_goc).encode('utf-8')).hexdigest()
 
+# --- XUẤT PDF ---
+class PDF_Phieu(FPDF):
+    def header(self):
+        self.set_font('Helvetica', 'B', 16)
+        self.cell(0, 10, 'HE THONG QUAN LY KHO SMART-ERP', 0, 1, 'C')
+        self.set_font('Helvetica', '', 10)
+        self.cell(0, 5, f'Ngay xuat: {get_vn_time()}', 0, 1, 'C')
+        self.line(10, 28, 200, 28)
+        self.ln(10)
+
+def xuat_pdf_binary(loai, nguoi, ma, ten, sl, ton, ly_do):
+    pdf = PDF_Phieu()
+    pdf.add_page()
+    pdf.set_font('Helvetica', 'B', 20)
+    pdf.cell(0, 15, f"PHIEU {loai.upper()}", 0, 1, 'C')
+    
+    pdf.set_font('Helvetica', '', 12)
+    pdf.ln(5)
+    pdf.cell(0, 10, f'Nguoi thuc hien: {nguoi}', 0, 1)
+    pdf.cell(0, 10, f'Ma san pham: {ma}', 0, 1)
+    pdf.cell(0, 10, f'Ten san pham: {ten}', 0, 1)
+    pdf.cell(0, 10, f'So luong dieu chuyen: {sl}', 0, 1)
+    pdf.cell(0, 10, f'Ton kho hien tai: {ton}', 0, 1)
+    pdf.ln(5)
+    pdf.multi_cell(0, 10, f'Ly do: {ly_do}')
+    
+    pdf.ln(20)
+    pdf.cell(95, 10, 'CHU KHO', 0, 0, 'C')
+    pdf.cell(95, 10, 'NGUOI NHAN', 0, 1, 'C')
+    
+    return pdf.output(dest='S').encode('latin-1')
+    
+# --- KÊT NỐI GOOGLE ---
 @st.cache_resource(ttl=600)
 def ket_noi_gsheets():
     creds_dict = json.loads(st.secrets["google_credentials"])
@@ -211,54 +245,51 @@ else:
 
         st.divider()
 
-        # BẢNG TƯƠNG TÁC
-        tu_khoa = st.text_input("🔍 Tìm kiếm nhanh...")
+        # Bảng dữ liệu tương tác
+        tu_khoa = st.text_input("🔍 Tìm nhanh mã hoặc tên...")
         if not df_sp.empty:
-            if tu_khoa:
-                df_sp = df_sp[df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False) | df_sp['ten_sp'].str.contains(tu_khoa, case=False)]
+            if tu_khoa: df_sp = df_sp[df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False) | df_sp['ten_sp'].str.contains(tu_khoa, case=False)]
+            
+            # Cảnh báo tồn thấp
+            df_sp['Tình trạng'] = df_sp['so_luong'].apply(lambda x: "🔴 Hết hàng" if x <= 0 else ("🟡 Sắp hết" if x < 10 else "🟢 Ổn định"))
             
             df_sp.insert(0, "Chọn", False)
-            # Khóa cột Số lượng trong bảng hiển thị
-            edited_df = st.data_editor(df_sp, hide_index=True, use_container_width=True, disabled=df_sp.columns.drop("Chọn"))
+            edited = st.data_editor(df_sp, hide_index=True, use_container_width=True, disabled=df_sp.columns.drop("Chọn"))
             
-            chon = edited_df[edited_df["Chọn"] == True]
-            if len(chon) == 1:
-                st.divider()
-                sp = chon.iloc[0]
-                st.subheader(f"📑 Phiếu điều chuyển: {sp['ten_sp']} (Tồn hiện tại: {int(sp['so_luong'])})")
-                
-                col_p1, col_p2, col_p3 = st.columns([1, 1, 2])
-                loai_phieu = col_p1.selectbox("Loại phiếu", ["Nhập Kho (+)", "Xuất Kho (-)"])
-                so_luong_td = col_p2.number_input("Số lượng", min_value=1, step=1)
-                ly_do = col_p3.text_input("Lý do / Đối tác / Khách hàng", placeholder="VD: Nhập hàng từ NCC A / Bán cho chị B...")
-                
-                if st.button("🚀 Xác nhận hoàn tất phiếu", type="primary"):
-                    try:
-                        cell = ws_sanpham.find(str(sp['ma_sp']), in_column=1)
+            selected = edited[edited["Chọn"] == True]
+            if len(selected) == 1:
+                sp = selected.iloc[0]
+                with st.container(border=True):
+                    st.subheader(f"📑 Lập Phiếu: {sp['ten_sp']}")
+                    cp1, cp2, cp3 = st.columns([1, 1, 2])
+                    loai = cp1.selectbox("Loại giao dịch", ["Nhập kho (+)", "Xuất kho (-)"])
+                    qty = cp2.number_input("Số lượng", min_value=1)
+                    note = cp3.text_input("Ghi chú / Khách hàng")
+                    
+                    if st.button("🚀 XÁC NHẬN & IN PHIẾU", type="primary"):
                         ton_cu = int(sp['so_luong'])
-                        ton_moi = ton_cu + so_luong_td if "Nhập" in loai_phieu else ton_cu - so_luong_td
+                        ton_moi = ton_cu + qty if "Nhập" in loai else ton_cu - qty
                         
-                        if ton_moi < 0:
-                            st.error("❌ Lỗi: Số lượng xuất vượt quá tồn kho hiện có!")
+                        if ton_moi < 0: st.error("Không đủ hàng trong kho!")
                         else:
-                            # Cập nhật số lượng mới và thời gian
-                            ws_sanpham.update_cell(cell.row, 4, ton_moi) # Cột 4 là so_luong
-                            ws_sanpham.update_cell(cell.row, 8, get_vn_time()) # Cột 8 là thoi_gian
+                            # Cập nhật Google Sheets
+                            cell = ws_sp.find(str(sp['ma_sp']), in_column=1)
+                            ws_sp.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
+                            ws_sp.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
                             
-                            hanh_dong = "NHẬP" if "Nhập" in loai_phieu else "XUẤT"
-                            ghi_log(user['ten_that'], hanh_dong, f"{hanh_dong} {so_luong_td} cái {sp['ma_sp']}. Lý do: {ly_do}. Tồn mới: {ton_moi}")
+                            log(loai.upper(), f"{qty} {sp['ma_sp']} - Lý do: {note}")
                             
-                            st.session_state.thong_bao = f"✅ Đã lập phiếu {hanh_dong} thành công!"
-                            tai_du_lieu_tu_google.clear()
-                            st.rerun()
-                    except: st.error("Lỗi đồng bộ dữ liệu.")
-            
-            elif len(chon) > 1:
-                if st.button("🗑️ Xóa các mã đã chọn (Admin)"):
-                    if user['vai_tro'] == 'admin':
-                        for m in chon['ma_sp'].tolist():
-                            c = ws_sanpham.find(str(m), in_column=1)
-                            ws_sanpham.delete_rows(c.row)
-                            time.sleep(0.5)
-                        tai_du_lieu_tu_google.clear()
-                        st.rerun()
+                            # Tạo PDF
+                            pdf_bin = xuat_pdf_binary(loai, user['ten_that'], sp['ma_sp'], sp['ten_sp'], qty, ton_moi, note)
+                            st.success(f"Đã cập nhật tồn kho: {ton_moi}")
+                            st.download_button("📥 TẢI PHIẾU PDF", data=pdf_bin, file_name=f"Phieu_{sp['ma_sp']}.pdf", mime="application/pdf")
+                            if st.button("Làm mới bảng"): st.rerun()
+
+            elif len(selected) > 1 and user['vai_tro'] == 'admin':
+                if st.button("🗑️ Xóa hàng loạt mã đã chọn"):
+                    for m in selected['ma_sp'].tolist():
+                        r = ws_sp.find(str(m), in_column=1)
+                        ws_sp.delete_rows(r.row)
+                        time.sleep(0.4)
+                    log("Xóa", f"Xóa {len(selected)} mã hàng")
+                    st.rerun()
