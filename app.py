@@ -244,6 +244,10 @@ else:
         if not df_sp.empty:
             if tu_khoa: df_sp = df_sp[df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False) | df_sp['ten_sp'].str.contains(tu_khoa, case=False)]
             
+            tu_khoa = st.text_input("🔍 Tìm nhanh mã hoặc tên...")
+        if not df_sp.empty:
+            if tu_khoa: df_sp = df_sp[df_sp['ma_sp'].astype(str).str.contains(tu_khoa, case=False) | df_sp['ten_sp'].str.contains(tu_khoa, case=False)]
+            
             # Cảnh báo tồn thấp
             df_sp['Tình trạng'] = df_sp['so_luong'].apply(lambda x: "🔴 Hết hàng" if x <= 0 else ("🟡 Sắp hết" if x < 10 else "🟢 Ổn định"))
             
@@ -267,9 +271,11 @@ else:
                         if ton_moi < 0: st.error("Không đủ hàng trong kho!")
                         else:
                             # Cập nhật Google Sheets
-                            cell = ws_sanpham.find(str(sp['ma_sp']), in_column=1)
-                            ws_sanpham.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
-                            ws_sanpham.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
+                            cell = ws_sp.find(str(sp['ma_sp']), in_column=1)
+                            ws_sp.update_cell(cell.row, 4, ton_moi) # Cột Số lượng
+                            ws_sp.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
+                            
+                            log(loai.upper(), f"{qty} {sp['ma_sp']} - Lý do: {note}")
                             
                             # Tạo PDF
                             pdf_bin = xuat_pdf_binary(loai, user['ten_that'], sp['ma_sp'], sp['ten_sp'], qty, ton_moi, note)
@@ -280,8 +286,8 @@ else:
             elif len(selected) > 1 and user['vai_tro'] == 'admin':
                 if st.button("🗑️ Xóa hàng loạt mã đã chọn"):
                     for m in selected['ma_sp'].tolist():
-                        r = ws_sanpham.find(str(m), in_column=1)
-                        ws_sanpham.delete_rows(r.row)
+                        r = ws_sp.find(str(m), in_column=1)
+                        ws_sp.delete_rows(r.row)
                         time.sleep(0.4)
                     log("Xóa", f"Xóa {len(selected)} mã hàng")
                     st.rerun()
