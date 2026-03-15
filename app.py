@@ -73,7 +73,6 @@ def kiem_tra_quyen(user, quyen_can_check):
 # ================= GIAO DIỆN ĐĂNG NHẬP =================
 if st.session_state.nguoi_dung is None:
     st.title("🔒 Đăng Nhập Hệ Thống")
-    st.caption("Tài khoản mặc định: admin | Mật khẩu: admin123")
     with st.form("dang_nhap"):
         tk_nhap = st.text_input("Tên đăng nhập:")
         mk_nhap = st.text_input("Mật khẩu:", type="password")
