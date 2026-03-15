@@ -118,13 +118,16 @@ else:
         st.dataframe(df_ls, use_container_width=True)
 
     # ================= 3. QUẢN LÝ KHO (TRỌNG TÂM) =================
-    elif trang_hien_tai == "📦 Quản lý Kho":
-        st.title("📦 Quản Lý Nhập/Xuất Kho")
+    elif trang_hien_tai == "📦 Quản lý Sản Phẩm":
+        st.title("📦 Hệ Thống Kho Hàng Trực Tuyến")
         
         df_sp = pd.DataFrame(data_sanpham)
+        
         if not df_sp.empty:
-            df_sp['so_luong'] = pd.to_numeric(df_sp['so_luong']).fillna(0)
-            df_sp['gia_ban'] = pd.to_numeric(df_sp['gia_ban']).fillna(0)
+            df_sp['ma_sp'] = df_sp['ma_sp'].astype(str) 
+            df_sp['so_luong'] = pd.to_numeric(df_sp.get('so_luong', 0), errors='coerce').fillna(0)
+            df_sp['gia_ban'] = pd.to_numeric(df_sp.get('gia_ban', 0), errors='coerce').fillna(0)
+            df_sp['Cảnh Báo'] = df_sp['so_luong'].apply(lambda x: "🔴 Sắp hết" if x < 5 else "🟢 Đủ hàng")
             
             # --- DASHBOARD ---
         st.subheader("📈 Phân Tích Tổng Quan")
