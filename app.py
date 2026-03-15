@@ -274,7 +274,7 @@ else:
                             ws_sanpham.update_cell(cell.row, 8, get_vn_time()) # Cột Thời gian
                             
                             # Tạo PDF
-                            pdf_bin = xuat_pdf_binary(loai, user['ten_that'], sp['ma_sp'], sp['ten_sp'], qty, ton_moi, note)
+                            pdf_bin = xuat_pdf_binary(user['ten_that'], sp['ma_sp'], sp['ten_sp'], so_luong, ton_moi, ghi_chu)
                             st.success(f"Đã cập nhật tồn kho: {ton_moi}")
                             st.download_button("📥 TẢI PHIẾU PDF", data=pdf_bin, file_name=f"Phieu_{sp['ma_sp']}.pdf", mime="application/pdf")
                             if st.button("Làm mới bảng"): st.rerun()
@@ -282,7 +282,7 @@ else:
             elif len(selected) > 1 and user['vai_tro'] == 'admin':
                 if st.button("🗑️ Xóa hàng loạt mã đã chọn"):
                     for m in selected['ma_sp'].tolist():
-                        r = ws_sp.find(str(m), in_column=1)
+                        r = ws_sanpham.find(str(m), in_column=1)
                         ws_sanpham.delete_rows(r.row)
                         time.sleep(0.4)
                     log("Xóa", f"Xóa {len(selected)} mã hàng")
