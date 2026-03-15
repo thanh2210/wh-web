@@ -118,7 +118,7 @@ else:
         st.dataframe(df_ls, use_container_width=True)
 
     # ================= 3. QUẢN LÝ KHO (TRỌNG TÂM) =================
-    elif trang_hien_tai == "📦 Quản lý Sản Phẩm":
+    elif trang_hien_tai == "📦 Quản lý kho":
         st.title("📦 Hệ Thống Kho Hàng Trực Tuyến")
         
         data_sanpham = ws_sanpham.get_all_records()
