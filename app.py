@@ -42,7 +42,7 @@ except Exception as e:
     st.error(f"❌ Lỗi kết nối CSDL. Vui lòng kiểm tra lại Link hoặc Quyền chia sẻ. Chi tiết: {e}")
     st.stop()
 
-BỘ NHỚ ĐỆM DỮ LIỆU (CHỐNG SẬP API QUOTA) ---
+# --- BỘ NHỚ ĐỆM DỮ LIỆU (CHỐNG SẬP API QUOTA) ---
 # Cache dữ liệu trong 60 giây. Nếu không có ai sửa gì, web sẽ lấy từ RAM cực nhanh.
 @st.cache_data(ttl=60)
 def tai_du_lieu_tu_google():
