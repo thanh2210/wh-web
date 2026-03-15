@@ -121,21 +121,41 @@ else:
     elif trang_hien_tai == "📦 Quản lý Sản Phẩm":
         st.title("📦 Hệ Thống Kho Hàng Trực Tuyến")
         
+        data_sanpham = ws_sanpham.get_all_records()
         df_sp = pd.DataFrame(data_sanpham)
         
+        # Xử lý an toàn dữ liệu số
         if not df_sp.empty:
-            df_sp['ma_sp'] = df_sp['ma_sp'].astype(str) 
             df_sp['so_luong'] = pd.to_numeric(df_sp.get('so_luong', 0), errors='coerce').fillna(0)
             df_sp['gia_ban'] = pd.to_numeric(df_sp.get('gia_ban', 0), errors='coerce').fillna(0)
-            df_sp['Cảnh Báo'] = df_sp['so_luong'].apply(lambda x: "🔴 Sắp hết" if x < 5 else "🟢 Đủ hàng")
             
-            # --- DASHBOARD ---
+            # TÍNH NĂNG CẢNH BÁO TỒN KHO THẤP
+            df_sp['Cảnh Báo'] = df_sp['so_luong'].apply(lambda x: "🔴 Sắp hết" if x < 5 else "🟢 Đủ hàng")
+
+        # --- DASHBOARD & BIỂU ĐỒ ---
         st.subheader("📈 Phân Tích Tổng Quan")
         col_m1, col_m2, col_m3 = st.columns(3)
         if not df_sp.empty:
-            col_m1.metric("📦 Tổng Số Mẫu SP", f"{len(df_sp)} mã")
-            col_m2.metric("🛒 Tổng Hàng Tồn", f"{int(df_sp['so_luong'].sum()):,}".replace(",", "."))
-            col_m3.metric("💰 Tổng Vốn Kho", f"{int((df_sp['so_luong'] * df_sp['gia_ban']).sum()):,}".replace(",", ".") + " đ")
+            tong_loai = len(df_sp)
+            tong_sl = int(df_sp['so_luong'].sum())
+            tong_tien = int((df_sp['so_luong'] * df_sp['gia_ban']).sum())
+            
+            col_m1.metric("📦 Tổng Số Mẫu SP", f"{tong_loai} mã")
+            col_m2.metric("🛒 Tổng Hàng Tồn", f"{tong_sl:,}".replace(",", "."))
+            col_m3.metric("💰 Tổng Vốn Kho", f"{tong_tien:,}".replace(",", ".") + " đ")
+            
+            # Vẽ biểu đồ tỷ trọng danh mục
+            df_chart = df_sp.groupby('danh_muc')['so_luong'].sum().reset_index()
+            pie_chart = alt.Chart(df_chart).mark_arc(innerRadius=40).encode(
+                theta=alt.Theta(field="so_luong", type="quantitative"),
+                color=alt.Color(field="danh_muc", type="nominal"),
+                tooltip=["danh_muc", "so_luong"]
+            ).properties(height=250, title="Tỷ trọng hàng theo Danh mục")
+            
+            with st.expander("📊 Bấm để xem Biểu đồ Tỷ trọng"):
+                st.altair_chart(pie_chart, use_container_width=True)
+        else:
+            st.info("Chưa có dữ liệu để vẽ biểu đồ.")
         
         st.divider()
 
