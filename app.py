@@ -6,15 +6,23 @@ import json
 from datetime import datetime
 from io import BytesIO
 import altair as alt
+import math
+import hashlib
 
 st.set_page_config(page_title="Hệ Thống Quản Lý ERP", page_icon="📦", layout="wide")
 
 # --- DANH MỤC SẢN PHẨM MẶC ĐỊNH ---
 DANH_MUC_SP = ["Điện tử", "Gia dụng", "Thời trang", "Thực phẩm", "Văn phòng phẩm", "Khác"]
 
+# --- HÀM MÃ HÓA MẬT KHẨU SHA-256 ---
+def ma_hoa_mat_khau(mat_khau_goc):
+    return hashlib.sha256(str(mat_khau_goc).encode('utf-8')).hexdigest()
+
+
 # --- KẾT NỐI GOOGLE SHEETS PHÂN TÁN (CẬP NHẬT MỚI) ---
 @st.cache_resource(ttl=600)
 def ket_noi_gsheets():
+
     # 1. Khởi tạo xác thực
     creds_dict = json.loads(st.secrets["google_credentials"])
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -34,23 +42,93 @@ except Exception as e:
     st.error(f"❌ Lỗi kết nối CSDL. Vui lòng kiểm tra lại Link hoặc Quyền chia sẻ. Chi tiết: {e}")
     st.stop()
 
+BỘ NHỚ ĐỆM DỮ LIỆU (CHỐNG SẬP API QUOTA) ---
+# Cache dữ liệu trong 60 giây. Nếu không có ai sửa gì, web sẽ lấy từ RAM cực nhanh.
+@st.cache_data(ttl=60)
+def tai_du_lieu_tu_google():
+    return ws_nhansu.get_all_records(), ws_sanpham.get_all_records(), ws_lichsu.get_all_records()
 
-# --- HÀM GHI NHẬT KÝ LỊCH SỬ (AUDIT TRAIL) ---
-def ghi_log(nguoi_dung, hanh_dong, chi_tiet):
-    tg = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# Tải dữ liệu vào biến
+data_nhansu, data_sanpham, data_lichsu = tai_du_lieu_tu_google()
+
+# TỰ ĐỘNG TẠO TÀI KHOẢN ADMIN NẾU FILE DATABASE TRỐNG
+if not data_nhansu:
     try:
-        ws_lichsu.append_row([tg, nguoi_dung, hanh_dong, chi_tiet])
+        ws_nhansu.append_row(['admin', ma_hoa_mat_khau('admin123'), 'Quản Trị Viên', 'admin', 'Them, Sua, Xoa, Xuat', 'HoatDong'])
+        tai_du_lieu_tu_google.clear() # Xóa cache để cập nhật ngay
+        st.rerun()
     except:
-        pass # Bỏ qua nếu lỗi mạng nhẹ để không gián đoạn app
+        st.error("Lỗi khởi tạo tài khoản Admin đầu tiên. Vui lòng kiểm tra lại file DB_NhanSu.")
 
-if 'nguoi_dung' not in st.session_state: st.session_state.nguoi_dung = None
-if 'thong_bao' not in st.session_state: st.session_state.thong_bao = None
 
-data_nhansu = ws_nhansu.get_all_records()
+    # ================= 2. LỊCH SỬ HOẠT ĐỘNG (BẢN CÓ PHÂN TRANG) =================
+    elif trang_hien_tai == "📖 Lịch sử Hoạt động":
+        st.title("📖 Nhật Ký Hệ Thống (Audit Trail)")
+        st.info("Ghi lại toàn bộ hành vi thêm, sửa, xóa, đăng nhập của mọi thành viên để kiểm soát.")
+        
+        # Khởi tạo biến nhớ "Trang hiện tại" nếu chưa có
+        if 'trang_lich_su' not in st.session_state:
+            st.session_state.trang_lich_su = 1
+            
+        data_lichsu = ws_lichsu.get_all_records()
+        df_ls = pd.DataFrame(data_lichsu)
+        
+        if not df_ls.empty:
+            # Sắp xếp lịch sử: Mới nhất lên đầu
+            df_ls = df_ls.sort_values(by='thoi_gian', ascending=False)
+            
+            # --- LOGIC PHÂN TRANG ---
+            SO_DONG_MOI_TRANG = 50
+            tong_so_dong = len(df_ls)
+            # Tính tổng số trang (Ví dụ: 101 dòng / 50 = 2.02 -> làm tròn lên là 3 trang)
+            tong_so_trang = math.ceil(tong_so_dong / SO_DONG_MOI_TRANG)
+            
+            # Đảm bảo số trang không bị vượt quá giới hạn nếu ai đó vừa xóa lịch sử
+            if st.session_state.trang_lich_su > tong_so_trang:
+                st.session_state.trang_lich_su = tong_so_trang
+            if st.session_state.trang_lich_su < 1:
+                st.session_state.trang_lich_su = 1
+                
+            # Cắt Dataframe: Lấy từ vị trí Bắt đầu đến vị trí Kết thúc
+            bat_dau = (st.session_state.trang_lich_su - 1) * SO_DONG_MOI_TRANG
+            ket_thuc = bat_dau + SO_DONG_MOI_TRANG
+            df_hien_thi = df_ls.iloc[bat_dau:ket_thuc]
+            
+            # Hiển thị đúng 50 dòng của trang hiện tại
+            st.dataframe(df_hien_thi, use_container_width=True)
+            
+            # --- GIAO DIỆN NÚT CHUYỂN TRANG ---
+            col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
+            
+            with col_btn1:
+                # Chỉ hiện nút "Trang trước" nếu không phải là trang 1
+                if st.button("⬅️ Trang Trước", use_container_width=True, disabled=(st.session_state.trang_lich_su == 1)):
+                    st.session_state.trang_lich_su -= 1
+                    st.rerun()
+                    
+            with col_btn2:
+                # Hiển thị thông tin tổng quan ở giữa
+                st.markdown(f"<div style='text-align: center; margin-top: 8px;'><b>Trang {st.session_state.trang_lich_su} / {tong_so_trang}</b> (Tổng số: {tong_so_dong} bản ghi)</div>", unsafe_allow_html=True)
+                
+            with col_btn3:
+                # Chỉ hiện nút "Trang tiếp" nếu chưa đến trang cuối
+                if st.button("Trang Tiếp ➡️", use_container_width=True, disabled=(st.session_state.trang_lich_su == tong_so_trang)):
+                    st.session_state.trang_lich_su += 1
+                    st.rerun()
+            
+            st.divider()
+            
+            # Nút xóa lịch sử (Bọc trong Expander để tránh ấn nhầm)
+            with st.expander("⚠️ Dọn dẹp bộ nhớ (Chỉ Admin)"):
+                st.warning("Hành động này sẽ xóa vĩnh viễn toàn bộ lịch sử từ trước đến nay để giải phóng dung lượng. Hãy cân nhắc kỹ!")
+                if st.button("🗑️ Xóa sạch toàn bộ lịch sử cũ", type="primary"):
+                    ws_lichsu.clear()
+                    ws_lichsu.append_row(["thoi_gian", "nguoi_thao_tac", "hanh_dong", "chi_tiet"])
+                    st.session_state.trang_lich_su = 1 # Reset về trang 1
+                    st.rerun()
+        else:
+            st.write("Chưa có ghi nhận nào.")
 
-def kiem_tra_quyen(user, quyen_can_check):
-    if user['vai_tro'] == 'admin': return True
-    return quyen_can_check in str(user.get('quyen', '')).split(', ')
 
 # --- GIAO DIỆN ĐĂNG NHẬP ---
 if st.session_state.nguoi_dung is None:
